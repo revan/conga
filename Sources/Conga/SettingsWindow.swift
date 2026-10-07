@@ -38,10 +38,9 @@ private struct SettingsView: View {
     var body: some View {
         Form {
             Section("Commands") {
-                TextField("Swipe left", text: $model.settings.leftCommand)
-                TextField("Swipe right", text: $model.settings.rightCommand)
+                commandField("Swipe left", text: $model.settings.leftCommand)
+                commandField("Swipe right", text: $model.settings.rightCommand)
             }
-            .font(.body.monospaced())
 
             Section {
                 Toggle("Natural scrolling", isOn: $model.settings.naturalScroll)
@@ -72,6 +71,19 @@ private struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 460)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// The label sits above the field rather than beside it, so the command gets the full width,
+    /// wraps when it is long, and is left-aligned. A right-aligned field hides trailing spaces.
+    private func commandField(_ title: String, text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+            TextField(title, text: text, prompt: Text("Shell command"), axis: .vertical)
+                .labelsHidden()
+                .lineLimit(1...4)
+                .multilineTextAlignment(.leading)
+                .font(.body.monospaced())
+        }
     }
 
     private func thresholdSlider(_ title: String, value: Binding<Double>, range: ClosedRange<Double>) -> some View {

@@ -30,7 +30,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             dispatcher?.handle(frame, device: device)
         }
         installStatusItem(foundTrackpad: foundTrackpad)
+        installEditMenu()
         previewIndicatorIfRequested()
+    }
+
+    /// An accessory app never shows its main menu, but the menu is still where ⌘X, ⌘C, ⌘V and
+    /// the rest are looked up. Without it the settings window's text fields ignore them.
+    private func installEditMenu() {
+        let edit = NSMenu(title: "Edit")
+        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "Z")
+        edit.addItem(.separator())
+        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+
+        let editItem = NSMenuItem()
+        editItem.submenu = edit
+        let mainMenu = NSMenu()
+        mainMenu.addItem(editItem)
+        NSApp.mainMenu = mainMenu
     }
 
     /// `--preview-indicator 0.6` holds the indicator at that progress, for checking its
