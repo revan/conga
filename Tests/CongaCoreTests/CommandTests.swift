@@ -23,30 +23,44 @@ private final class RecordingRunner: CommandRunning {
         var values: [IndicatorUpdate] = []
     }
 
-    @Test func rightSwipeRunsRightCommand() {
+    @Test func fingersMovingLeftSwipeRight() {
         let (dispatcher, runner, updates) = makeDispatcher()
-        for f in [frame(4), frame(4, x: 0.8), frame(0)] { dispatcher.handle(f) }
+        for f in [frame(4), frame(4, x: 0.2), frame(0)] { dispatcher.handle(f) }
         #expect(runner.commands == ["aerospace workspace --wrap-around next"])
         #expect(updates() == [.show(.right, progress: 1), .hide(fired: true)])
     }
 
-    @Test func leftSwipeRunsLeftCommand() {
-        let (dispatcher, runner, _) = makeDispatcher()
-        for f in [frame(4), frame(4, x: 0.2), frame(0)] { dispatcher.handle(f) }
+    @Test func fingersMovingRightSwipeLeft() {
+        let (dispatcher, runner, updates) = makeDispatcher()
+        for f in [frame(4), frame(4, x: 0.8), frame(0)] { dispatcher.handle(f) }
         #expect(runner.commands == ["aerospace workspace --wrap-around prev"])
+        #expect(updates() == [.show(.left, progress: 1), .hide(fired: true)])
+    }
+
+    @Test func withoutNaturalScrollSwipeFollowsFingers() {
+        var settings = Settings()
+        settings.naturalScroll = false
+        let (dispatcher, runner, updates) = makeDispatcher(settings)
+        for f in [frame(4), frame(4, x: 0.8), frame(0)] { dispatcher.handle(f) }
+        for f in [frame(4), frame(4, x: 0.2), frame(0)] { dispatcher.handle(f) }
+        #expect(runner.commands == ["aerospace workspace --wrap-around next", "aerospace workspace --wrap-around prev"])
+        #expect(updates() == [
+            .show(.right, progress: 1), .hide(fired: true),
+            .show(.left, progress: 1), .hide(fired: true),
+        ])
     }
 
     @Test func reversedSwipeRunsNothing() {
         let (dispatcher, runner, updates) = makeDispatcher()
         for f in [frame(4), frame(4, x: 0.8), frame(4, x: 0.5), frame(0)] { dispatcher.handle(f) }
         #expect(runner.commands.isEmpty)
-        #expect(updates() == [.show(.right, progress: 1), .show(.right, progress: 0), .hide(fired: false)])
+        #expect(updates() == [.show(.left, progress: 1), .show(.left, progress: 0), .hide(fired: false)])
     }
 
     @Test func customCommandsAndThresholdsApplyLive() {
         let (dispatcher, runner, _) = makeDispatcher()
         var settings = Settings()
-        settings.rightCommand = "echo hi"
+        settings.leftCommand = "echo hi"
         settings.triggerFraction = 0.5
         dispatcher.settings = settings
 
@@ -58,7 +72,7 @@ private final class RecordingRunner: CommandRunning {
 
     @Test func blankCommandIsNotRun() {
         var settings = Settings()
-        settings.rightCommand = "  "
+        settings.leftCommand = "  "
         let (dispatcher, runner, updates) = makeDispatcher(settings)
         for f in [frame(4), frame(4, x: 0.8), frame(0)] { dispatcher.handle(f) }
         #expect(runner.commands.isEmpty)
@@ -91,7 +105,7 @@ private final class RecordingRunner: CommandRunning {
         dispatcher.handle(frame(4, x: 0.8), device: 1)
         dispatcher.handle(frame(0), device: 2)
         dispatcher.handle(frame(0), device: 1)
-        #expect(runner.commands == ["aerospace workspace --wrap-around next"])
+        #expect(runner.commands == ["aerospace workspace --wrap-around prev"])
     }
 }
 

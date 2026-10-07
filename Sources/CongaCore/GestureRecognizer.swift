@@ -1,6 +1,10 @@
 public enum SwipeDirection: Equatable, Sendable {
     case left
     case right
+
+    public var opposite: SwipeDirection {
+        self == .left ? .right : .left
+    }
 }
 
 public enum GestureEvent: Equatable, Sendable {

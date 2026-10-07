@@ -43,6 +43,10 @@ private struct SettingsView: View {
             }
             .font(.body.monospaced())
 
+            Section {
+                Toggle("Natural scrolling", isOn: $model.settings.naturalScroll)
+            }
+
             Section("Four-finger swipe distance") {
                 thresholdSlider(
                     "Trigger command",

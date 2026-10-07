@@ -2,6 +2,7 @@
 
 A macOS menu bar app that runs a shell command on a four-finger horizontal trackpad swipe.
 Swipe left runs one command, swipe right another (defaults switch AeroSpace workspaces).
+With natural scroll, the default, moving the fingers left is a swipe right.
 While the fingers are down, an arrow in a glass box tracks progress; releasing past the
 trigger distance runs the command, and swiping back before releasing cancels.
 
@@ -49,6 +50,10 @@ New behaviour goes in `CongaCore` with tests; the app target should only wire th
 - **Fire on release position, not peak.** The recognizer decides using the displacement at
   the moment fingers lift. That is what makes "swipe out, swipe back, release" cancel. After a
   gesture ends it ignores input until every finger has lifted.
+- **Natural scroll.** `Settings.naturalScroll` (on by default) makes fingers moving left a
+  swipe right, and the reverse. The recognizer always reports where the fingers went;
+  `GestureDispatcher` turns that into the swipe, so the arrow and the command flip together
+  and "Swipe left" / "Swipe right" in the settings name the swipe, not the finger movement.
 - **One direction per touch.** The direction is fixed once the swipe passes the indicator
   start distance. Swiping back past the starting point only undoes the swipe; it never starts
   one in the opposite direction until the fingers lift and touch again. The starting point

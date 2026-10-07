@@ -7,6 +7,9 @@ public struct Settings: Equatable, Sendable {
     public static let minimumSpan = 0.01
 
     public var isEnabled = true
+    /// When set, the fingers push the content: moving them left is a swipe right, and the
+    /// reverse. The indicator and the command both follow the swipe, not the fingers.
+    public var naturalScroll = true
     public var leftCommand = "aerospace workspace --wrap-around prev"
     public var rightCommand = "aerospace workspace --wrap-around next"
     /// Fraction of trackpad width that must be swiped for release to fire the command.
@@ -18,6 +21,11 @@ public struct Settings: Equatable, Sendable {
 
     public var thresholds: GestureThresholds {
         GestureThresholds(lowerBound: indicatorStartFraction, trigger: triggerFraction)
+    }
+
+    /// The swipe that fingers moving in `fingerDirection` perform.
+    public func swipeDirection(forFingers fingerDirection: SwipeDirection) -> SwipeDirection {
+        naturalScroll ? fingerDirection.opposite : fingerDirection
     }
 
     public func command(for direction: SwipeDirection) -> String {
@@ -42,6 +50,7 @@ public struct Settings: Equatable, Sendable {
 public final class SettingsStore {
     private enum Key {
         static let isEnabled = "isEnabled"
+        static let naturalScroll = "naturalScroll"
         static let leftCommand = "leftCommand"
         static let rightCommand = "rightCommand"
         static let triggerFraction = "triggerFraction"
@@ -57,6 +66,7 @@ public final class SettingsStore {
     public func load() -> Settings {
         var settings = Settings()
         if let value = defaults.object(forKey: Key.isEnabled) as? Bool { settings.isEnabled = value }
+        if let value = defaults.object(forKey: Key.naturalScroll) as? Bool { settings.naturalScroll = value }
         if let value = defaults.string(forKey: Key.leftCommand) { settings.leftCommand = value }
         if let value = defaults.string(forKey: Key.rightCommand) { settings.rightCommand = value }
         if let value = defaults.object(forKey: Key.triggerFraction) as? Double { settings.triggerFraction = value }
@@ -69,6 +79,7 @@ public final class SettingsStore {
     public func save(_ settings: Settings) {
         let settings = settings.normalized()
         defaults.set(settings.isEnabled, forKey: Key.isEnabled)
+        defaults.set(settings.naturalScroll, forKey: Key.naturalScroll)
         defaults.set(settings.leftCommand, forKey: Key.leftCommand)
         defaults.set(settings.rightCommand, forKey: Key.rightCommand)
         defaults.set(settings.triggerFraction, forKey: Key.triggerFraction)

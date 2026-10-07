@@ -4,7 +4,8 @@ public enum IndicatorUpdate: Equatable, Sendable {
 }
 
 /// Feeds touch frames through a recognizer per trackpad, runs the configured command when a
-/// swipe fires, and reports what the indicator should display.
+/// swipe fires, and reports what the indicator should display. The recognizer reports where
+/// the fingers went; the swipe that means depends on `Settings.naturalScroll`.
 public final class GestureDispatcher {
     public var settings: Settings {
         didSet {
@@ -31,10 +32,10 @@ public final class GestureDispatcher {
         let event = recognizers[device, default: GestureRecognizer()].handle(frame, thresholds: settings.thresholds)
         switch event {
         case .progress(let direction, let fraction):
-            onIndicatorUpdate?(.show(direction, progress: fraction))
+            onIndicatorUpdate?(.show(settings.swipeDirection(forFingers: direction), progress: fraction))
         case .fired(let direction):
             onIndicatorUpdate?(.hide(fired: true))
-            let command = settings.command(for: direction)
+            let command = settings.command(for: settings.swipeDirection(forFingers: direction))
             if !command.allSatisfy(\.isWhitespace) {
                 runner.run(command)
             }
