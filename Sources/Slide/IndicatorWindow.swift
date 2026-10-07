@@ -12,7 +12,7 @@ final class IndicatorWindow {
     private static let bottomMargin: CGFloat = 140
     private static let fadeOutDuration = 0.25
     /// Time for the arrow to slide the full travel back to the edge after an aborted swipe.
-    private static let retreatDuration = 0.2
+    private static let retreatDuration = 0.1
 
     private let panel: NSPanel
     private let arrow = NSImageView()
