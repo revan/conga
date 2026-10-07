@@ -46,7 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func installStatusItem(foundTrackpad: Bool) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem.button?.image = NSImage(systemSymbolName: "hand.draw", accessibilityDescription: "Conga")
+        statusItem.button?.image = NSImage(systemSymbolName: "figure.stand.line.dotted.figure.stand", accessibilityDescription: "Conga")
 
         let menu = NSMenu()
         if !foundTrackpad {
