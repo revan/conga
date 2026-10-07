@@ -19,6 +19,9 @@ Use `scripts/test.sh` rather than bare `swift test`: the machine this was built 
 the Command Line Tools (no Xcode), where SwiftPM does not find the Swift Testing macro plugin
 by itself. For the same reason there is no Xcode project and no XCTest; tests use Swift Testing.
 
+CI (`.github/workflows/test.yml`) runs `scripts/test.sh` on a `macos-26` runner for pushes to
+`main` and for pull requests.
+
 ## Layout
 
 - `Sources/SlideCore` — all logic, no AppKit. Everything here is unit tested.
