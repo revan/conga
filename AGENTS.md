@@ -48,7 +48,9 @@ New behaviour goes in `SlideCore` with tests; the app target should only wire th
   gesture ends it ignores input until every finger has lifted.
 - **One direction per touch.** The direction is fixed once the swipe passes the indicator
   start distance. Swiping back past the starting point only undoes the swipe; it never starts
-  one in the opposite direction until the fingers lift and touch again.
+  one in the opposite direction until the fingers lift and touch again. The starting point
+  follows the fingers while they are behind it, so swiping in the original direction again
+  starts from where they turned around.
 - **Aborted swipes retreat, then fade.** On release below the trigger the arrow slides back to
   its edge and only then does the box fade. A fired swipe just fades.
 - **PATH.** Apps launched from Finder lack Homebrew on `PATH`. At startup the app asks the

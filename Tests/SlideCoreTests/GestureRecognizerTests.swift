@@ -68,8 +68,19 @@ private func progress(_ event: GestureEvent?) -> Double? {
         #expect(result == [.progress(.right, fraction: 1), .progress(.right, fraction: 0), .cancelled])
     }
 
-    @Test func returningToOriginalDirectionAfterOvershootStillFires() {
-        let result = events([frame(4), frame(4, x: 0.8), frame(4, x: 0.2), frame(4, x: 0.8), frame(0)])
+    @Test func swipingAgainAfterOvershootStartsFromTurnaroundPoint() throws {
+        let result = events([frame(4), frame(4, x: 0.8), frame(4, x: 0.2), frame(4, x: 0.3), frame(4, x: 0.45), frame(0)])
+        try #require(result.count == 5)
+        #expect(result[1] == .progress(.right, fraction: 0))
+        #expect(abs(progress(result[2])! - 1.0 / 3) < 1e-9)
+        #expect(result[3] == .progress(.right, fraction: 1))
+        #expect(result[4] == .fired(.right))
+    }
+
+    @Test func overshootDoesNotCountAsVerticalSwipe() {
+        let result = events([
+            frame(4), frame(4, x: 0.8, y: 0.57), frame(4, x: 0.4, y: 0.57), frame(4, x: 0.65, y: 0.57), frame(0),
+        ])
         #expect(result.last == .fired(.right))
     }
 

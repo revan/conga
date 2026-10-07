@@ -31,13 +31,15 @@ public struct GestureThresholds: Equatable, Sendable {
 /// displacement, so swiping out and back before lifting cancels.
 ///
 /// A gesture has one direction, fixed when the swipe first passes the lower bound. Swiping
-/// back past the starting point only undoes it; going the other way takes a new touch.
+/// back past the starting point only undoes it; going the other way takes a new touch. The
+/// starting point follows the fingers when they do, so swiping in the original direction
+/// again starts from wherever they turned around.
 public struct GestureRecognizer: Sendable {
     public static let fingerCount = 4
 
     private enum State {
         case idle
-        /// `travel` is the distance moved in `direction`, negative when behind the start.
+        /// `travel` is the distance moved in `direction` from the start.
         case tracking(startX: Double, startY: Double, direction: SwipeDirection?, travel: Double)
         /// The gesture is over; wait for every finger to lift before starting another.
         case ended
@@ -84,6 +86,11 @@ public struct GestureRecognizer: Sendable {
 
             let direction: SwipeDirection = lockedDirection ?? (dx < 0 ? .left : .right)
             let travel = direction == .left ? -dx : dx
+            if travel < 0 {
+                // Behind the start in a fixed direction: restart from here.
+                state = .tracking(startX: x, startY: y, direction: direction, travel: 0)
+                return .progress(direction, fraction: 0)
+            }
             let isLocked = lockedDirection != nil || travel >= thresholds.lowerBound
             state = .tracking(startX: startX, startY: startY, direction: isLocked ? direction : nil, travel: travel)
 
