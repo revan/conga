@@ -2,7 +2,7 @@ import AppKit
 import SlideCore
 
 /// The arrow-in-a-glass-box HUD. Its opacity and arrow position follow gesture progress
-/// directly; only the fade-out after release is a timed animation.
+/// directly; only what happens after release is a timed animation.
 @MainActor
 final class IndicatorWindow {
     private static let size: CGFloat = 200
@@ -11,6 +11,8 @@ final class IndicatorWindow {
     private static let arrowTravel: CGFloat = 46
     private static let bottomMargin: CGFloat = 140
     private static let fadeOutDuration = 0.25
+    /// Time for the arrow to slide the full travel back to the edge after an aborted swipe.
+    private static let retreatDuration = 0.2
 
     private let panel: NSPanel
     private let arrow = NSImageView()
@@ -70,8 +72,8 @@ final class IndicatorWindow {
         switch update {
         case .show(let direction, let progress):
             show(direction, progress: progress)
-        case .hide:
-            fadeOut()
+        case .hide(let fired):
+            hide(fired: fired)
         }
     }
 
@@ -102,10 +104,33 @@ final class IndicatorWindow {
         panel.alphaValue = layout.opacity
     }
 
-    private func fadeOut() {
+    private func hide(fired: Bool) {
         guard panel.isVisible else { return }
         generation += 1
         let generation = generation
+
+        guard !fired, let direction = shownDirection else {
+            fadeOut(generation: generation)
+            return
+        }
+
+        // An aborted swipe first slides the arrow back to the edge it came from, then fades.
+        let edge = IndicatorModel.layout(direction: direction, progress: 0, travel: Self.arrowTravel).arrowOffset
+        let distance = abs(edge - arrowCenterX.constant) / Self.arrowTravel
+        arrow.contentTintColor = .secondaryLabelColor
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Self.retreatDuration * distance
+            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            arrowCenterX.animator().constant = edge
+        } completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.generation == generation else { return }
+                self.fadeOut(generation: generation)
+            }
+        }
+    }
+
+    private func fadeOut(generation: Int) {
         NSAnimationContext.runAnimationGroup { context in
             context.duration = Self.fadeOutDuration
             panel.animator().alphaValue = 0
