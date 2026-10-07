@@ -1,6 +1,6 @@
 import Testing
 
-@testable import SlideCore
+@testable import CongaCore
 
 /// A frame with `count` fingers spread around the centroid (`x`, `y`).
 func frame(_ count: Int, x: Double = 0.5, y: Double = 0.5) -> TouchFrame {

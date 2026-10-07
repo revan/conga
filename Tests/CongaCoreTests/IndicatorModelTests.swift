@@ -1,6 +1,6 @@
 import Testing
 
-@testable import SlideCore
+@testable import CongaCore
 
 @Suite struct IndicatorModelTests {
     @Test func hiddenAtEdgeWhenProgressIsZero() {

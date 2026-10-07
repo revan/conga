@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "Slide",
+    name: "Conga",
     platforms: [.macOS(.v14)],
     targets: [
         .target(
@@ -12,8 +12,8 @@ let package = Package(
                 .linkedFramework("MultitouchSupport"),
             ]
         ),
-        .target(name: "SlideCore"),
-        .executableTarget(name: "Slide", dependencies: ["CMultitouch", "SlideCore"]),
-        .testTarget(name: "SlideCoreTests", dependencies: ["SlideCore"]),
+        .target(name: "CongaCore"),
+        .executableTarget(name: "Conga", dependencies: ["CMultitouch", "CongaCore"]),
+        .testTarget(name: "CongaCoreTests", dependencies: ["CongaCore"]),
     ]
 )

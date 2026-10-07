@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@testable import SlideCore
+@testable import CongaCore
 
 private final class RecordingRunner: CommandRunning {
     var commands: [String] = []
@@ -112,11 +112,11 @@ private final class RecordingRunner: CommandRunning {
     }
 
     @Test func passesEnvironment() async {
-        #expect(await status(of: "test \"$SLIDE_TEST\" = yes", environment: ["SLIDE_TEST": "yes"]) == 0)
+        #expect(await status(of: "test \"$CONGA_TEST\" = yes", environment: ["CONGA_TEST": "yes"]) == 0)
     }
 
     @Test func runsShellSyntax() async {
-        let file = FileManager.default.temporaryDirectory.appendingPathComponent("slide-\(UUID().uuidString)")
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("conga-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: file) }
         #expect(await status(of: "echo one > '\(file.path)' && echo two >> '\(file.path)'") == 0)
         #expect(try! String(contentsOf: file, encoding: .utf8) == "one\ntwo\n")

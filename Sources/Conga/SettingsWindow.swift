@@ -1,9 +1,9 @@
 import AppKit
-import SlideCore
+import CongaCore
 import SwiftUI
 
 // SwiftUI has its own `Settings` scene type.
-typealias Settings = SlideCore.Settings
+typealias Settings = CongaCore.Settings
 
 @MainActor
 final class SettingsModel: ObservableObject {
@@ -94,7 +94,7 @@ final class SettingsWindowController {
     func show() {
         if window == nil {
             let window = NSWindow(contentViewController: NSHostingController(rootView: SettingsView(model: model)))
-            window.title = "Slide Settings"
+            window.title = "Conga Settings"
             window.styleMask = [.titled, .closable]
             window.isReleasedWhenClosed = false
             window.center()

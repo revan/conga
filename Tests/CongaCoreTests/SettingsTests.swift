@@ -1,12 +1,12 @@
 import Foundation
 import Testing
 
-@testable import SlideCore
+@testable import CongaCore
 
 @Suite struct SettingsTests {
     /// A store backed by a throwaway defaults domain.
     private func withStore(_ body: (SettingsStore) -> Void) {
-        let suite = "SlideTests-\(UUID().uuidString)"
+        let suite = "CongaTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         body(SettingsStore(defaults: defaults))

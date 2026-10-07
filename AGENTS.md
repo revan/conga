@@ -1,4 +1,4 @@
-# Slide
+# Conga
 
 A macOS menu bar app that runs a shell command on a four-finger horizontal trackpad swipe.
 Swipe left runs one command, swipe right another (defaults switch AeroSpace workspaces).
@@ -10,9 +10,9 @@ trigger distance runs the command, and swiping back before releasing cancels.
 ```sh
 swift build            # debug build
 scripts/test.sh        # unit tests (extra args are passed to `swift test`)
-scripts/bundle.sh      # release build wrapped in build/Slide.app, ad-hoc signed
-open build/Slide.app
-build/Slide.app/Contents/MacOS/Slide --preview-indicator 0.6   # hold the HUD at 60%; negative = left swipe
+scripts/bundle.sh      # release build wrapped in build/Conga.app, ad-hoc signed
+open build/Conga.app
+build/Conga.app/Contents/MacOS/Conga --preview-indicator 0.6   # hold the HUD at 60%; negative = left swipe
 ```
 
 Use `scripts/test.sh` rather than bare `swift test`: the machine this was built on has only
@@ -24,18 +24,18 @@ CI (`.github/workflows/test.yml`) runs `scripts/test.sh` on a `macos-26` runner 
 
 ## Layout
 
-- `Sources/SlideCore` — all logic, no AppKit. Everything here is unit tested.
+- `Sources/CongaCore` — all logic, no AppKit. Everything here is unit tested.
   - `GestureRecognizer` — touch frames → `.progress` / `.fired` / `.cancelled`.
   - `GestureDispatcher` — one recognizer per trackpad; runs commands, emits indicator updates.
   - `IndicatorModel` — progress → opacity and arrow offset.
   - `Settings`, `SettingsStore` — values, clamping, `UserDefaults` persistence.
   - `ShellCommandRunner` — `/bin/sh -c`, fire and forget.
-- `Sources/Slide` — the AppKit/SwiftUI shell: status item, settings window, HUD panel, and
+- `Sources/Conga` — the AppKit/SwiftUI shell: status item, settings window, HUD panel, and
   `MultitouchMonitor`. Keep it thin; it has no tests.
 - `Sources/CMultitouch` — C declarations for the private framework. No code.
-- `Tests/SlideCoreTests` — tests for `SlideCore`.
+- `Tests/CongaCoreTests` — tests for `CongaCore`.
 
-New behaviour goes in `SlideCore` with tests; the app target should only wire things together.
+New behaviour goes in `CongaCore` with tests; the app target should only wire things together.
 
 ## Things that are not obvious
 

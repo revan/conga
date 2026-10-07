@@ -1,5 +1,5 @@
 import AppKit
-import SlideCore
+import CongaCore
 
 /// The arrow-in-a-glass-box HUD. Its opacity and arrow position follow gesture progress
 /// directly; only what happens after release is a timed animation.

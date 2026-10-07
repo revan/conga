@@ -1,6 +1,6 @@
 import AppKit
 import CMultitouch
-import SlideCore
+import CongaCore
 
 /// Set before any device is started and only read from the framework's callback thread.
 nonisolated(unsafe) private var frameHandler: (@Sendable (Int, TouchFrame) -> Void)?
@@ -58,7 +58,7 @@ final class MultitouchMonitor {
             MTRegisterContactFrameCallback(device, contactCallback)
             MTDeviceStart(device, 0)
         }
-        NSLog("Slide: listening to %d multitouch device(s)", devices.count)
+        NSLog("Conga: listening to %d multitouch device(s)", devices.count)
         return !devices.isEmpty
     }
 

@@ -1,5 +1,5 @@
 import AppKit
-import SlideCore
+import CongaCore
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -46,7 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func installStatusItem(foundTrackpad: Bool) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem.button?.image = NSImage(systemSymbolName: "hand.draw", accessibilityDescription: "Slide")
+        statusItem.button?.image = NSImage(systemSymbolName: "hand.draw", accessibilityDescription: "Conga")
 
         let menu = NSMenu()
         if !foundTrackpad {
@@ -57,7 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         enabledItem.state = model.settings.isEnabled ? .on : .off
         menu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Quit Slide", action: #selector(NSApplication.terminate), keyEquivalent: "q")
+        menu.addItem(withTitle: "Quit Conga", action: #selector(NSApplication.terminate), keyEquivalent: "q")
         for item in menu.items where item.action != #selector(NSApplication.terminate) {
             item.target = self
         }
@@ -81,7 +81,7 @@ private struct LoggingRunner: CommandRunning {
     func run(_ command: String) {
         shell.run(command) { status in
             if status != 0 {
-                NSLog("Slide: `%@` exited with status %d", command, status)
+                NSLog("Conga: `%@` exited with status %d", command, status)
             }
         }
     }
