@@ -46,6 +46,11 @@ New behaviour goes in `SlideCore` with tests; the app target should only wire th
 - **Fire on release position, not peak.** The recognizer decides using the displacement at
   the moment fingers lift. That is what makes "swipe out, swipe back, release" cancel. After a
   gesture ends it ignores input until every finger has lifted.
+- **One direction per touch.** The direction is fixed once the swipe passes the indicator
+  start distance. Swiping back past the starting point only undoes the swipe; it never starts
+  one in the opposite direction until the fingers lift and touch again.
+- **Aborted swipes retreat, then fade.** On release below the trigger the arrow slides back to
+  its edge and only then does the box fade. A fired swipe just fades.
 - **PATH.** Apps launched from Finder lack Homebrew on `PATH`. At startup the app asks the
   login shell for its `PATH` once (`printenv PATH`, which also works in fish) and runs every
   command through `/bin/sh -c` with it. Commands are therefore POSIX sh, not the user's shell.

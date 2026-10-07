@@ -29,12 +29,16 @@ public struct GestureThresholds: Equatable, Sendable {
 ///
 /// The fire decision is made from the displacement at the moment of release, not the peak
 /// displacement, so swiping out and back before lifting cancels.
+///
+/// A gesture has one direction, fixed when the swipe first passes the lower bound. Swiping
+/// back past the starting point only undoes it; going the other way takes a new touch.
 public struct GestureRecognizer: Sendable {
     public static let fingerCount = 4
 
     private enum State {
         case idle
-        case tracking(startX: Double, startY: Double, dx: Double)
+        /// `travel` is the distance moved in `direction`, negative when behind the start.
+        case tracking(startX: Double, startY: Double, direction: SwipeDirection?, travel: Double)
         /// The gesture is over; wait for every finger to lift before starting another.
         case ended
     }
@@ -50,16 +54,19 @@ public struct GestureRecognizer: Sendable {
         case .idle:
             if count == Self.fingerCount {
                 let (x, y) = centroid(of: frame.touches)
-                state = .tracking(startX: x, startY: y, dx: 0)
+                state = .tracking(startX: x, startY: y, direction: nil, travel: 0)
             } else if count > Self.fingerCount {
                 state = .ended
             }
             return nil
 
-        case .tracking(let startX, let startY, let lastDx):
+        case .tracking(let startX, let startY, let lockedDirection, let lastTravel):
             if count < Self.fingerCount {
                 state = count == 0 ? .idle : .ended
-                return abs(lastDx) >= thresholds.trigger ? .fired(direction(of: lastDx)) : .cancelled
+                if let lockedDirection, lastTravel >= thresholds.trigger {
+                    return .fired(lockedDirection)
+                }
+                return .cancelled
             }
             if count > Self.fingerCount {
                 state = .ended
@@ -75,11 +82,15 @@ public struct GestureRecognizer: Sendable {
                 return .cancelled
             }
 
-            state = .tracking(startX: startX, startY: startY, dx: dx)
+            let direction: SwipeDirection = lockedDirection ?? (dx < 0 ? .left : .right)
+            let travel = direction == .left ? -dx : dx
+            let isLocked = lockedDirection != nil || travel >= thresholds.lowerBound
+            state = .tracking(startX: startX, startY: startY, direction: isLocked ? direction : nil, travel: travel)
+
             let span = thresholds.trigger - thresholds.lowerBound
-            let travel = abs(dx) - thresholds.lowerBound
-            let fraction = span > 0 ? min(max(travel / span, 0), 1) : (travel >= 0 ? 1 : 0)
-            return .progress(direction(of: dx), fraction: fraction)
+            let past = travel - thresholds.lowerBound
+            let fraction = span > 0 ? min(max(past / span, 0), 1) : (past >= 0 ? 1 : 0)
+            return .progress(direction, fraction: fraction)
 
         case .ended:
             if count == 0 {
@@ -87,10 +98,6 @@ public struct GestureRecognizer: Sendable {
             }
             return nil
         }
-    }
-
-    private func direction(of dx: Double) -> SwipeDirection {
-        dx < 0 ? .left : .right
     }
 
     private func centroid(of touches: [Touch]) -> (x: Double, y: Double) {

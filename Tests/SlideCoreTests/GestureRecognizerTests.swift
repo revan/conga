@@ -63,9 +63,25 @@ private func progress(_ event: GestureEvent?) -> Double? {
         #expect(!result.contains(.fired(.right)))
     }
 
-    @Test func reversingThroughStartFlipsDirection() {
+    @Test func reversingThroughStartDoesNotSwitchDirection() {
         let result = events([frame(4), frame(4, x: 0.8), frame(4, x: 0.2), frame(0)])
-        #expect(result == [.progress(.right, fraction: 1), .progress(.left, fraction: 1), .fired(.left)])
+        #expect(result == [.progress(.right, fraction: 1), .progress(.right, fraction: 0), .cancelled])
+    }
+
+    @Test func returningToOriginalDirectionAfterOvershootStillFires() {
+        let result = events([frame(4), frame(4, x: 0.8), frame(4, x: 0.2), frame(4, x: 0.8), frame(0)])
+        #expect(result.last == .fired(.right))
+    }
+
+    @Test func directionIsNotFixedBeforeLowerBound() {
+        let result = events([frame(4), frame(4, x: 0.52), frame(4, x: 0.2), frame(0)])
+        #expect(result == [.progress(.right, fraction: 0), .progress(.left, fraction: 1), .fired(.left)])
+    }
+
+    @Test func oppositeDirectionWorksAfterLiftingAndTouchingAgain() {
+        let result = events([frame(4), frame(4, x: 0.8), frame(4, x: 0.2), frame(0), frame(4, x: 0.5), frame(4, x: 0.2), frame(0)])
+        #expect(result.last == .fired(.left))
+        #expect(result.filter { $0 == .cancelled }.count == 1)
     }
 
     @Test(arguments: [1, 2, 3, 5]) func otherFingerCountsNeverTrigger(count: Int) {
