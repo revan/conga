@@ -79,6 +79,13 @@ private final class RecordingRunner: CommandRunning {
         #expect(updates().last == .hide(fired: true))
     }
 
+    @Test func swipeUpShowsWorkspacesAndRunsNothing() {
+        let (dispatcher, runner, updates) = makeDispatcher()
+        for f in [frame(4), frame(4, y: 0.52), frame(4, y: 0.9), frame(0)] { dispatcher.handle(f) }
+        #expect(runner.commands.isEmpty)
+        #expect(updates() == [.show(.left, progress: 0), .showWorkspaces(progress: 1), .hide(fired: false)])
+    }
+
     @Test func disabledIgnoresGestures() {
         var settings = Settings()
         settings.isEnabled = false
@@ -134,6 +141,25 @@ private final class RecordingRunner: CommandRunning {
         defer { try? FileManager.default.removeItem(at: file) }
         #expect(await status(of: "echo one > '\(file.path)' && echo two >> '\(file.path)'") == 0)
         #expect(try! String(contentsOf: file, encoding: .utf8) == "one\ntwo\n")
+    }
+
+    @Test func outputIsWhatTheCommandPrinted() async {
+        let output = await ShellCommandRunner(environment: [:]).output(of: "echo one; echo two")
+        #expect(output == Data("one\ntwo\n".utf8))
+    }
+
+    @Test func outputLargerThanAPipeBufferIsReadWhole() async {
+        let output = await ShellCommandRunner(environment: [:]).output(of: "/usr/bin/head -c 300000 /dev/zero")
+        #expect(output?.count == 300_000)
+    }
+
+    @Test func outputIsNilWhenTheCommandFails() async {
+        #expect(await ShellCommandRunner(environment: [:]).output(of: "echo partial; exit 2") == nil)
+    }
+
+    @Test func outputCommandHasATerminalForStdin() async {
+        let output = await ShellCommandRunner(environment: [:]).output(of: "test -t 0 && echo yes")
+        #expect(output == Data("yes\n".utf8))
     }
 
     @Test func loginShellEnvironmentHasUsablePath() {

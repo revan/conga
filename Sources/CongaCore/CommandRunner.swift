@@ -1,11 +1,12 @@
 import Foundation
+import os
 
 public protocol CommandRunning {
     func run(_ command: String)
 }
 
 /// Runs commands with `/bin/sh -c`, without waiting for them to finish.
-public struct ShellCommandRunner: CommandRunning {
+public struct ShellCommandRunner: CommandRunning, Sendable {
     public var environment: [String: String]
 
     public init(environment: [String: String] = ProcessInfo.processInfo.environment) {
@@ -21,11 +22,52 @@ public struct ShellCommandRunner: CommandRunning {
     /// Stdin is a pseudo-terminal, as it would be for a command typed into a terminal. Some
     /// tools (AeroSpace 0.20+ among them) refuse to run when stdin is a file or pipe.
     public func run(_ command: String, completion: (@Sendable (Int32) -> Void)?) {
+        if !start(command, standardOutput: FileHandle.nullDevice, completion: completion) {
+            completion?(-1)
+        }
+    }
+
+    /// Runs `command` and passes what it wrote to stdout to `completion`, or nil if it could
+    /// not be launched or exited with a non-zero status.
+    public func output(of command: String, completion: @escaping @Sendable (Data?) -> Void) {
+        let pipe = Pipe()
+        let result = OSAllocatedUnfairLock<(data: Data?, status: Int32)>(initialState: (nil, -1))
+        let group = DispatchGroup()
+        group.enter()
+        let started = start(command, standardOutput: pipe) { status in
+            result.withLock { $0.status = status }
+            group.leave()
+        }
+        guard started else {
+            completion(nil)
+            return
+        }
+        // Read while the command runs, so one that fills the pipe's buffer is not left blocked.
+        let reader = pipe.fileHandleForReading
+        DispatchQueue.global(qos: .userInitiated).async(group: group) {
+            let data = reader.readDataToEndOfFile()
+            result.withLock { $0.data = data }
+        }
+        group.notify(queue: .global(qos: .userInitiated)) {
+            let (data, status) = result.withLock { $0 }
+            completion(status == 0 ? data : nil)
+        }
+    }
+
+    public func output(of command: String) async -> Data? {
+        await withCheckedContinuation { continuation in
+            output(of: command) { continuation.resume(returning: $0) }
+        }
+    }
+
+    /// Launches the shell and returns whether it started. `completion` receives the exit
+    /// status, and is not called if the launch failed.
+    private func start(_ command: String, standardOutput: Any, completion: (@Sendable (Int32) -> Void)?) -> Bool {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", command]
         process.environment = environment
-        process.standardOutput = FileHandle.nullDevice
+        process.standardOutput = standardOutput
         process.standardError = FileHandle.nullDevice
 
         var primary: Int32 = -1
@@ -46,9 +88,10 @@ public struct ShellCommandRunner: CommandRunning {
         }
         do {
             try process.run()
+            return true
         } catch {
             try? terminal?.close()
-            completion?(-1)
+            return false
         }
     }
 

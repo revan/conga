@@ -5,12 +5,9 @@ import CongaCore
 /// directly; only what happens after release is a timed animation.
 @MainActor
 final class IndicatorWindow {
-    private static let size: CGFloat = 200
-    private static let cornerRadius: CGFloat = 28
+    private static let size = HUDStyle.size
     /// How far from centre the arrow starts.
     private static let arrowTravel: CGFloat = 46
-    private static let bottomMargin: CGFloat = 140
-    private static let fadeOutDuration = 0.25
     /// Time for the arrow to slide the full travel back to the edge after an aborted swipe.
     private static let retreatDuration = 0.1
 
@@ -22,20 +19,7 @@ final class IndicatorWindow {
     private var generation = 0
 
     init() {
-        panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: Self.size, height: Self.size),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: true
-        )
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        panel.level = .statusBar
-        panel.ignoresMouseEvents = true
-        panel.hidesOnDeactivate = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
-        panel.alphaValue = 0
+        panel = HUDStyle.makePanel(size: NSSize(width: Self.size, height: Self.size))
 
         let content = NSView()
         arrow.translatesAutoresizingMaskIntoConstraints = false
@@ -44,40 +28,10 @@ final class IndicatorWindow {
         arrowCenterX = arrow.centerXAnchor.constraint(equalTo: content.centerXAnchor)
         NSLayoutConstraint.activate([arrowCenterX, arrow.centerYAnchor.constraint(equalTo: content.centerYAnchor)])
 
-        panel.contentView = Self.makeBackground(containing: content)
+        panel.contentView = HUDStyle.makeBackground(containing: content, size: Self.size)
     }
 
-    private static func makeBackground(containing content: NSView) -> NSView {
-        if #available(macOS 26.0, *) {
-            let glass = NSGlassEffectView()
-            glass.cornerRadius = cornerRadius
-            glass.contentView = content
-            return glass
-        }
-        let effect = NSVisualEffectView()
-        effect.material = .hudWindow
-        effect.blendingMode = .behindWindow
-        effect.state = .active
-        effect.wantsLayer = true
-        effect.layer?.cornerRadius = cornerRadius
-        effect.layer?.cornerCurve = .continuous
-        effect.layer?.masksToBounds = true
-        content.frame = effect.bounds
-        content.autoresizingMask = [.width, .height]
-        effect.addSubview(content)
-        return effect
-    }
-
-    func apply(_ update: IndicatorUpdate) {
-        switch update {
-        case .show(let direction, let progress):
-            show(direction, progress: progress)
-        case .hide(let fired):
-            hide(fired: fired)
-        }
-    }
-
-    private func show(_ direction: SwipeDirection, progress: Double) {
+    func show(_ direction: SwipeDirection, progress: Double) {
         let layout = IndicatorModel.layout(direction: direction, progress: progress, travel: Self.arrowTravel)
         generation += 1
 
@@ -104,7 +58,7 @@ final class IndicatorWindow {
         panel.alphaValue = layout.opacity
     }
 
-    private func hide(fired: Bool) {
+    func hide(fired: Bool) {
         guard panel.isVisible else { return }
         generation += 1
         let generation = generation
@@ -132,7 +86,7 @@ final class IndicatorWindow {
 
     private func fadeOut(generation: Int) {
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = Self.fadeOutDuration
+            context.duration = HUDStyle.fadeOutDuration
             panel.animator().alphaValue = 0
         } completionHandler: { [weak self] in
             MainActor.assumeIsolated {
@@ -144,9 +98,7 @@ final class IndicatorWindow {
 
     /// Centred horizontally near the bottom of the screen under the pointer.
     private func positionOnActiveScreen() {
-        let mouse = NSEvent.mouseLocation
-        guard let screen = NSScreen.screens.first(where: { $0.frame.contains(mouse) }) ?? NSScreen.main else { return }
-        let frame = screen.frame
-        panel.setFrameOrigin(NSPoint(x: frame.midX - Self.size / 2, y: frame.minY + Self.bottomMargin))
+        guard let frame = HUDStyle.activeScreen()?.frame else { return }
+        panel.setFrameOrigin(NSPoint(x: frame.midX - Self.size / 2, y: frame.minY + HUDStyle.bottomMargin))
     }
 }

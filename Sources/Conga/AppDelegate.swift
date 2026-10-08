@@ -6,6 +6,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let store = SettingsStore()
     private let monitor = MultitouchMonitor()
     private let indicator = IndicatorWindow()
+    private let overlay = WorkspaceOverlayWindow()
+    private let shell = ShellCommandRunner(environment: ShellCommandRunner.loginShellEnvironment())
+    /// True from the first frame of a swipe up until the indicator is next hidden.
+    private var isPeeking = false
+    /// Bumped on every refresh so the results of an older one are dropped.
+    private var refreshGeneration = 0
+    private var previews: [Int: CGImage] = [:]
     private var model: SettingsModel!
     private var dispatcher: GestureDispatcher!
     private var settingsWindow: SettingsWindowController!
@@ -14,8 +21,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let settings = store.load()
-        dispatcher = GestureDispatcher(settings: settings, runner: LoggingRunner())
-        dispatcher.onIndicatorUpdate = { [indicator] in indicator.apply($0) }
+        dispatcher = GestureDispatcher(settings: settings, runner: LoggingRunner(shell: shell))
+        dispatcher.onIndicatorUpdate = { [weak self] in self?.apply($0) }
+        // Asked for here, once, rather than in the middle of a gesture. Without it the
+        // overlay shows window names instead of previews.
+        CGRequestScreenCaptureAccess()
 
         model = SettingsModel(settings: settings)
         model.onChange = { [weak self] settings in
@@ -32,6 +42,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installStatusItem(foundTrackpad: foundTrackpad)
         installEditMenu()
         previewIndicatorIfRequested()
+        previewWorkspacesIfRequested()
+    }
+
+    private func apply(_ update: IndicatorUpdate) {
+        switch update {
+        case .show(let direction, let progress):
+            indicator.show(direction, progress: progress)
+        case .showWorkspaces(let progress):
+            if !isPeeking {
+                isPeeking = true
+                refreshWorkspaces()
+            }
+            overlay.show(progress: progress)
+        case .hide(let fired):
+            isPeeking = false
+            indicator.hide(fired: fired)
+            overlay.hide()
+        }
+    }
+
+    /// Asks AeroSpace what is where and shows that with the previews already in hand, then
+    /// captures new previews. The overlay keeps the last result, so the next swipe up has
+    /// something to show at once.
+    private func refreshWorkspaces() {
+        refreshGeneration += 1
+        let generation = refreshGeneration
+        Task {
+            async let windows = shell.output(of: WorkspaceOverview.listWindowsCommand)
+            async let focused = shell.output(of: WorkspaceOverview.focusedWorkspaceCommand)
+            guard let windowsJSON = await windows else { return }
+            let workspaces = WorkspaceOverview.parse(
+                windowsJSON: windowsJSON,
+                focusedWorkspace: String(decoding: await focused ?? Data(), as: UTF8.self)
+            )
+            guard generation == refreshGeneration else { return }
+            overlay.update(workspaces: workspaces, previews: previews)
+
+            let ids = workspaces.flatMap(\.windows).map(\.id)
+            let captured = await WindowPreviews.capture(windowIDs: ids, maxPixelSize: 400)
+            guard generation == refreshGeneration else { return }
+            previews = captured
+            overlay.update(workspaces: workspaces, previews: captured)
+        }
     }
 
     /// An accessory app never shows its main menu, but the menu is still where ⌘X, ⌘C, ⌘V and
@@ -61,7 +114,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               arguments.indices.contains(flag + 1),
               let progress = Double(arguments[flag + 1])
         else { return }
-        indicator.apply(.show(progress < 0 ? .left : .right, progress: abs(progress)))
+        apply(.show(progress < 0 ? .left : .right, progress: abs(progress)))
+    }
+
+    /// `--preview-workspaces 1` does the same for the workspace overlay.
+    private func previewWorkspacesIfRequested() {
+        let arguments = CommandLine.arguments
+        guard let flag = arguments.firstIndex(of: "--preview-workspaces"),
+              arguments.indices.contains(flag + 1),
+              let progress = Double(arguments[flag + 1])
+        else { return }
+        apply(.showWorkspaces(progress: progress))
     }
 
     private func installStatusItem(foundTrackpad: Bool) {
@@ -96,7 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 /// Runs commands in the login shell's environment and logs the ones that fail, since there is
 /// nowhere else for their errors to go.
 private struct LoggingRunner: CommandRunning {
-    let shell = ShellCommandRunner(environment: ShellCommandRunner.loginShellEnvironment())
+    let shell: ShellCommandRunner
 
     func run(_ command: String) {
         shell.run(command) { status in

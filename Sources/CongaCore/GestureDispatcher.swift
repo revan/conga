@@ -1,5 +1,7 @@
 public enum IndicatorUpdate: Equatable, Sendable {
     case show(SwipeDirection, progress: Double)
+    /// A swipe up: show the workspace overlay instead of the arrow.
+    case showWorkspaces(progress: Double)
     case hide(fired: Bool)
 }
 
@@ -33,6 +35,8 @@ public final class GestureDispatcher {
         switch event {
         case .progress(let direction, let fraction):
             onIndicatorUpdate?(.show(settings.swipeDirection(forFingers: direction), progress: fraction))
+        case .peek(let fraction):
+            onIndicatorUpdate?(.showWorkspaces(progress: fraction))
         case .fired(let direction):
             onIndicatorUpdate?(.hide(fired: true))
             let command = settings.command(for: settings.swipeDirection(forFingers: direction))
