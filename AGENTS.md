@@ -94,6 +94,11 @@ New behaviour goes in `CongaCore` with tests; the app target should only wire th
   `naturalScroll` says. The row does not wrap; pushing past an end drags the starting point
   along, like a swipe. If the focused workspace is not in the row (it has a name, not a
   number), nothing is outlined until the fingers move.
+- **Seeking accelerates.** Like the pointer, each frame's sideways movement is multiplied by
+  `1 + Settings.workspaceAcceleration × speed`, the speed in trackpad widths per second above
+  0.2, smoothed over about 40 ms and capped at 8×, so a slow movement still steps one workspace
+  per tenth and a quick one jumps several. The speed comes from `TouchFrame.timestamp`; frames
+  with equal timestamps, as in most tests, are never accelerated. 0 in the settings turns it off.
 - **Workspace overlay data.** Each swipe up runs `aerospace list-windows --all --json` once,
   shows the result with the previews from last time, then captures new previews and updates in
   place. Only workspaces whose name is a number are shown: those with windows, plus the

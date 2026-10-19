@@ -46,7 +46,10 @@ public final class GestureDispatcher {
         case .progress(let direction, let fraction):
             onIndicatorUpdate?(.show(settings.swipeDirection(forFingers: direction), progress: fraction))
         case .peek(let fraction, let offset):
-            let selected = seekers[device, default: WorkspaceSeeker()].select(offset: offset, in: workspaces)
+            let seeker = WorkspaceSeeker(acceleration: settings.workspaceAcceleration)
+            let selected = seekers[device, default: seeker].select(
+                offset: offset, timestamp: frame.timestamp, in: workspaces
+            )
             onIndicatorUpdate?(.showWorkspaces(progress: fraction, selected: selected?.name))
         case .peekReleased:
             onIndicatorUpdate?(.hide(fired: true))

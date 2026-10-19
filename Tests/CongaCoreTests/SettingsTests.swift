@@ -21,6 +21,7 @@ import Testing
             #expect(settings.rightCommand == "aerospace workspace --wrap-around next")
             #expect(settings.triggerFraction == 0.20)
             #expect(settings.indicatorStartFraction == 0.05)
+            #expect(settings.workspaceAcceleration == 1.5)
         }
     }
 
@@ -33,6 +34,7 @@ import Testing
             settings.rightCommand = "echo right"
             settings.triggerFraction = 0.4
             settings.indicatorStartFraction = 0.1
+            settings.workspaceAcceleration = 3.5
             store.save(settings)
             #expect(store.load() == settings)
         }
@@ -73,9 +75,13 @@ import Testing
         var settings = Settings()
         settings.triggerFraction = 5
         settings.indicatorStartFraction = -1
+        settings.workspaceAcceleration = 99
         let normalized = settings.normalized()
         #expect(normalized.triggerFraction == Settings.triggerRange.upperBound)
         #expect(normalized.indicatorStartFraction == Settings.minimumIndicatorStart)
+        #expect(normalized.workspaceAcceleration == Settings.accelerationRange.upperBound)
+        settings.workspaceAcceleration = -1
+        #expect(settings.normalized().workspaceAcceleration == 0)
     }
 
     @Test func loadNormalizesStoredValues() {

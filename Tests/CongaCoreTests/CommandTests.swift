@@ -107,6 +107,27 @@ private final class RecordingRunner: CommandRunning {
         #expect(runner.commands == ["aerospace workspace 4"])
     }
 
+    @Test func fastSeekingIsAcceleratedByTheSetting() {
+        func switched(acceleration: Double) -> [String] {
+            var settings = Settings()
+            settings.workspaceAcceleration = acceleration
+            let (dispatcher, runner, _) = makeDispatcher(settings)
+            dispatcher.workspaces = ["1", "2", "3", "4", "5", "6"].map {
+                Workspace(name: $0, isFocused: $0 == "1", windows: [])
+            }
+            let frames = [frame(4), frame(4, y: 0.9)] + (1...6).map { frame(4, x: 0.5 + 0.02 * Double($0), y: 0.9) }
+            for (index, f) in frames.enumerated() {
+                var f = f
+                f.timestamp = 0.01 * Double(index)
+                dispatcher.handle(f)
+            }
+            dispatcher.handle(frame(0))
+            return runner.commands
+        }
+        #expect(switched(acceleration: 0) == ["aerospace workspace 2"])
+        #expect(switched(acceleration: 3) != ["aerospace workspace 2"])
+    }
+
     @Test func seekingIgnoresNaturalScroll() {
         var settings = Settings()
         settings.naturalScroll = false

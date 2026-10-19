@@ -152,6 +152,72 @@ private func json(_ windows: [(id: Int, app: String, title: String, workspace: S
         #expect(seeker.selection(in: row(["1", "2"], focused: "2"))?.name == "2")
     }
 
+    /// Moves the fingers from 0 to `distance` in `frames` frames, `interval` seconds apart.
+    private func seek(
+        _ seeker: inout WorkspaceSeeker, to distance: Double, frames: Int, interval: Double,
+        in workspaces: [Workspace]
+    ) -> Workspace? {
+        var selected = seeker.select(offset: 0, timestamp: 0, in: workspaces)
+        for frame in 1...frames {
+            selected = seeker.select(
+                offset: distance * Double(frame) / Double(frames), timestamp: interval * Double(frame), in: workspaces
+            )
+        }
+        return selected
+    }
+
+    private let longRow = ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
+
+    @Test func slowMovementIsNotAccelerated() {
+        var seeker = WorkspaceSeeker(acceleration: 5)
+        // 0.1 trackpad widths a second, under the threshold.
+        let selected = seek(&seeker, to: step * 2, frames: 20, interval: 0.1, in: row(longRow, focused: "4"))
+        #expect(selected?.name == "6")
+    }
+
+    @Test func fastMovementGoesFurther() {
+        let workspaces = row(longRow, focused: "4")
+        var linear = WorkspaceSeeker()
+        var accelerated = WorkspaceSeeker(acceleration: 2)
+        // 2 trackpad widths a second.
+        #expect(seek(&linear, to: step, frames: 5, interval: 0.01, in: workspaces)?.name == "5")
+        #expect(seek(&accelerated, to: step, frames: 5, interval: 0.01, in: workspaces)?.name == "7")
+    }
+
+    @Test func moreAccelerationGoesFurtherStill() {
+        let workspaces = row(longRow, focused: "1")
+        var some = WorkspaceSeeker(acceleration: 1)
+        var more = WorkspaceSeeker(acceleration: 4)
+        let a = seek(&some, to: step * 2, frames: 10, interval: 0.01, in: workspaces)
+        let b = seek(&more, to: step * 2, frames: 10, interval: 0.01, in: workspaces)
+        #expect(Int(a!.name)! < Int(b!.name)!)
+    }
+
+    @Test func turningBackSlowlyAfterAFastSeekStepsOneAtATime() {
+        var seeker = WorkspaceSeeker(acceleration: 2)
+        let workspaces = row(longRow, focused: "1")
+        let far = seek(&seeker, to: step, frames: 5, interval: 0.01, in: workspaces)
+        #expect(far?.name == "4")
+        // Back one step at 0.1 widths a second.
+        var selected = far
+        for frame in 1...10 {
+            selected = seeker.select(offset: step - 0.01 * Double(frame), timestamp: 0.05 + 0.1 * Double(frame), in: workspaces)
+        }
+        #expect(selected?.name == "3")
+    }
+
+    @Test func gainIsCapped() {
+        var seeker = WorkspaceSeeker(acceleration: 5)
+        let workspaces = row(longRow + ["10", "11", "12", "13", "14", "15", "16", "17", "18", "19", "20"], focused: "1")
+        // An absurd 50 widths a second for a tenth of the width.
+        let selected = seek(&seeker, to: step, frames: 2, interval: 0.001, in: workspaces)
+        #expect(Int(selected!.name)! <= 1 + Int(WorkspaceSeeker.maximumGain))
+    }
+
+    @Test func negativeAccelerationIsNone() {
+        #expect(WorkspaceSeeker(acceleration: -3).acceleration == 0)
+    }
+
     @Test func switchCommandNamesTheWorkspace() {
         #expect(WorkspaceOverview.switchCommand(to: "7") == "aerospace workspace 7")
     }

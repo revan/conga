@@ -5,6 +5,7 @@ public struct Settings: Equatable, Sendable {
     public static let minimumIndicatorStart = 0.01
     /// The indicator must start at least this far below the trigger.
     public static let minimumSpan = 0.01
+    public static let accelerationRange = 0.0...5.0
 
     public var isEnabled = true
     /// When set, the fingers push the content: moving them left is a swipe right, and the
@@ -16,6 +17,9 @@ public struct Settings: Equatable, Sendable {
     public var triggerFraction = 0.20
     /// Fraction of trackpad width at which the indicator starts to appear.
     public var indicatorStartFraction = 0.05
+    /// How much faster sideways movement moves the workspace overlay's selection further.
+    /// 0 is one workspace per `WorkspaceSeeker.step` at any speed.
+    public var workspaceAcceleration = 1.5
 
     public init() {}
 
@@ -43,6 +47,10 @@ public struct Settings: Equatable, Sendable {
             max(indicatorStartFraction, Self.minimumIndicatorStart),
             copy.triggerFraction - Self.minimumSpan
         )
+        copy.workspaceAcceleration = min(
+            max(workspaceAcceleration, Self.accelerationRange.lowerBound),
+            Self.accelerationRange.upperBound
+        )
         return copy
     }
 }
@@ -55,6 +63,7 @@ public final class SettingsStore {
         static let rightCommand = "rightCommand"
         static let triggerFraction = "triggerFraction"
         static let indicatorStartFraction = "indicatorStartFraction"
+        static let workspaceAcceleration = "workspaceAcceleration"
     }
 
     private let defaults: UserDefaults
@@ -73,6 +82,9 @@ public final class SettingsStore {
         if let value = defaults.object(forKey: Key.indicatorStartFraction) as? Double {
             settings.indicatorStartFraction = value
         }
+        if let value = defaults.object(forKey: Key.workspaceAcceleration) as? Double {
+            settings.workspaceAcceleration = value
+        }
         return settings.normalized()
     }
 
@@ -84,5 +96,6 @@ public final class SettingsStore {
         defaults.set(settings.rightCommand, forKey: Key.rightCommand)
         defaults.set(settings.triggerFraction, forKey: Key.triggerFraction)
         defaults.set(settings.indicatorStartFraction, forKey: Key.indicatorStartFraction)
+        defaults.set(settings.workspaceAcceleration, forKey: Key.workspaceAcceleration)
     }
 }

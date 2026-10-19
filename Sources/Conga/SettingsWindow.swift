@@ -59,6 +59,23 @@ private struct SettingsView: View {
                 )
             }
 
+            Section("Workspace overlay") {
+                LabeledContent("Acceleration") {
+                    HStack {
+                        Slider(
+                            value: $model.settings.workspaceAcceleration,
+                            in: Settings.accelerationRange,
+                            step: 0.5
+                        )
+                        Text(model.settings.workspaceAcceleration == 0
+                            ? "Off"
+                            : model.settings.workspaceAcceleration.formatted(.number.precision(.fractionLength(1))))
+                            .monospacedDigit()
+                            .frame(width: 40, alignment: .trailing)
+                    }
+                }
+            }
+
             HStack {
                 Spacer()
                 Button("Reset to Defaults") {

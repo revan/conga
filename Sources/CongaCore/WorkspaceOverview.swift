@@ -114,27 +114,64 @@ extension WorkspaceOverview {
 /// Picks a workspace from how far the fingers have moved sideways during one swipe up: the
 /// focused workspace to begin with, and one further along the row for every `step`.
 ///
+/// With acceleration, sideways movement counts for more the faster the fingers go, like the
+/// pointer: a slow movement moves the selection one workspace at a time, a quick one jumps
+/// several. Each frame's movement is multiplied by `1 + acceleration × speed`, the speed in
+/// trackpad widths per second above `speedThreshold`, smoothed over a few frames.
+///
 /// The row does not wrap. Moving past either end drags the starting point along, so that
 /// turning back takes effect at once, as it does for a swipe.
 public struct WorkspaceSeeker: Sendable {
     /// Sideways travel, as a fraction of trackpad width, that moves the selection by one.
     public static let step = 0.10
+    /// Speeds below this, in trackpad widths per second, are not accelerated, so that slow,
+    /// deliberate seeking stays one workspace per step.
+    public static let speedThreshold = 0.2
+    /// The most a frame's movement is multiplied by, however fast the fingers go.
+    public static let maximumGain = 8.0
+    /// How long, in seconds, the speed takes to follow the fingers. Single frames are noisy.
+    public static let smoothing = 0.04
+
+    public let acceleration: Double
 
     private var origin = 0.0
-    private var offset = 0.0
+    /// The sideways travel so far, accelerated.
+    private var position = 0.0
+    private var last: (offset: Double, timestamp: Double)?
+    private var speed = 0.0
 
-    public init() {}
+    public init(acceleration: Double = 0) {
+        self.acceleration = max(acceleration, 0)
+    }
 
-    public mutating func select(offset: Double, in workspaces: [Workspace]) -> Workspace? {
-        self.offset = offset
+    /// Selects a workspace for fingers `offset` from where the swipe started, at `timestamp`
+    /// seconds.
+    public mutating func select(offset: Double, timestamp: Double = 0, in workspaces: [Workspace]) -> Workspace? {
+        advance(to: offset, at: timestamp)
         guard let limits = Self.limits(in: workspaces) else { return nil }
         let steps = rawSteps
         if steps < limits.lowerBound {
-            origin = offset - Double(limits.lowerBound) * Self.step
+            origin = position - Double(limits.lowerBound) * Self.step
         } else if steps > limits.upperBound {
-            origin = offset - Double(limits.upperBound) * Self.step
+            origin = position - Double(limits.upperBound) * Self.step
         }
         return selection(in: workspaces)
+    }
+
+    private mutating func advance(to offset: Double, at timestamp: Double) {
+        defer { last = (offset, timestamp) }
+        guard let last else {
+            position = offset
+            return
+        }
+        let delta = offset - last.offset
+        let elapsed = timestamp - last.timestamp
+        if elapsed > 0 {
+            let weight = min(elapsed / Self.smoothing, 1)
+            speed += (abs(delta) / elapsed - speed) * weight
+        }
+        let gain = min(1 + acceleration * max(speed - Self.speedThreshold, 0), Self.maximumGain)
+        position += delta * gain
     }
 
     /// The workspace that the last offset selects among `workspaces`.
@@ -150,7 +187,7 @@ public struct WorkspaceSeeker: Sendable {
     }
 
     private var rawSteps: Int {
-        Int(((offset - origin) / Self.step).rounded())
+        Int(((position - origin) / Self.step).rounded())
     }
 
     /// How many steps there are to each end of the row.
