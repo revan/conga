@@ -35,6 +35,14 @@ private func json(_ windows: [(id: Int, app: String, title: String, workspace: S
         #expect(workspaces.map(\.isFocused) == [false, true])
     }
 
+    @Test func emptyFocusedWorkspaceIsIncludedIfNumbered() {
+        let data = json([(1, "A", "a", "1"), (2, "B", "b", "5")])
+        let workspaces = WorkspaceOverview.parse(windowsJSON: data, focusedWorkspace: "3")
+        #expect(workspaces.map(\.name) == ["1", "3", "5"])
+        #expect(workspaces[1] == Workspace(name: "3", isFocused: true, windows: []))
+        #expect(WorkspaceOverview.parse(windowsJSON: data, focusedWorkspace: "beeper").map(\.name) == ["1", "5"])
+    }
+
     @Test func parsesTheCLIsOutput() {
         let data = Data("""
             [
@@ -61,6 +69,69 @@ private func json(_ windows: [(id: Int, app: String, title: String, workspace: S
     @Test func untitledWindowIsNamedAfterItsApp() {
         #expect(WorkspaceWindow(id: 1, appName: "Finder", title: " ").displayName == "Finder")
         #expect(WorkspaceWindow(id: 1, appName: "Finder", title: "Downloads").displayName == "Downloads")
+    }
+}
+
+@Suite struct WorkspaceSeekerTests {
+    private func row(_ names: [String], focused: String?) -> [Workspace] {
+        names.map { Workspace(name: $0, isFocused: $0 == focused, windows: []) }
+    }
+
+    private let step = WorkspaceSeeker.step
+
+    @Test func startsOnTheFocusedWorkspace() {
+        var seeker = WorkspaceSeeker()
+        #expect(seeker.select(offset: 0, in: row(["1", "2", "3"], focused: "2"))?.name == "2")
+    }
+
+    @Test func movesOneWorkspacePerStep() {
+        var seeker = WorkspaceSeeker()
+        let workspaces = row(["1", "2", "3", "4", "5"], focused: "3")
+        #expect(seeker.select(offset: step * 0.4, in: workspaces)?.name == "3")
+        #expect(seeker.select(offset: step * 0.6, in: workspaces)?.name == "4")
+        #expect(seeker.select(offset: step * 2, in: workspaces)?.name == "5")
+        #expect(seeker.select(offset: -step * 2, in: workspaces)?.name == "1")
+    }
+
+    @Test func stopsAtTheEnds() {
+        var seeker = WorkspaceSeeker()
+        let workspaces = row(["1", "2", "3"], focused: "2")
+        #expect(seeker.select(offset: step * 5, in: workspaces)?.name == "3")
+        #expect(seeker.select(offset: -step * 9, in: workspaces)?.name == "1")
+    }
+
+    @Test func turningBackAfterOvershootTakesEffectAtOnce() {
+        var seeker = WorkspaceSeeker()
+        let workspaces = row(["1", "2", "3"], focused: "2")
+        #expect(seeker.select(offset: step * 5, in: workspaces)?.name == "3")
+        #expect(seeker.select(offset: step * 4.4, in: workspaces)?.name == "2")
+        #expect(seeker.select(offset: step * 3.4, in: workspaces)?.name == "1")
+    }
+
+    @Test func withoutAFocusedWorkspaceNothingIsSelectedUntilTheFingersMove() {
+        var seeker = WorkspaceSeeker()
+        let workspaces = row(["1", "2", "3"], focused: nil)
+        #expect(seeker.select(offset: 0, in: workspaces) == nil)
+        #expect(seeker.select(offset: step, in: workspaces)?.name == "1")
+        #expect(seeker.select(offset: step * 2, in: workspaces)?.name == "2")
+        #expect(seeker.select(offset: -step, in: workspaces)?.name == "3")
+    }
+
+    @Test func noWorkspacesSelectsNothing() {
+        var seeker = WorkspaceSeeker()
+        #expect(seeker.select(offset: 0.3, in: []) == nil)
+        #expect(seeker.selection(in: []) == nil)
+    }
+
+    @Test func selectionFollowsANewRow() {
+        var seeker = WorkspaceSeeker()
+        _ = seeker.select(offset: step, in: row(["1", "2", "3"], focused: "1"))
+        #expect(seeker.selection(in: row(["1", "2", "3"], focused: "2"))?.name == "3")
+        #expect(seeker.selection(in: row(["1", "2"], focused: "2"))?.name == "2")
+    }
+
+    @Test func switchCommandNamesTheWorkspace() {
+        #expect(WorkspaceOverview.switchCommand(to: "7") == "aerospace workspace 7")
     }
 }
 

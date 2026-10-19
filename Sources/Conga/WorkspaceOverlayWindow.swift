@@ -11,9 +11,15 @@ final class WorkspaceOverlayWindow {
     /// Padding around the window tiles in a square of the full size, and the gap between them.
     private static let tileInset: CGFloat = 14
     private static let tileSpacing: CGFloat = 6
+    private static let outlineWidth: CGFloat = 5
+    private static let outlineMoveDuration = 0.12
 
     private let panel = HUDStyle.makePanel(size: NSSize(width: HUDStyle.size, height: HUDStyle.size))
+    private let outline = NSView()
     private var workspaces: [Workspace] = []
+    /// Where each workspace's square is in the row, by name.
+    private var squareFrames: [String: NSRect] = [:]
+    private var selected: String?
     private var previews: [Int: CGImage] = [:]
     /// The progress last asked for; 0 once hidden.
     private var progress = 0.0
@@ -21,10 +27,18 @@ final class WorkspaceOverlayWindow {
     /// Bumped on every show so a stale fade-out completion does not hide a newer gesture.
     private var generation = 0
 
-    func show(progress: Double) {
+    init() {
+        outline.wantsLayer = true
+        outline.layer?.borderWidth = Self.outlineWidth
+        outline.layer?.cornerCurve = .continuous
+    }
+
+    /// `selected` names the workspace to outline, if any.
+    func show(progress: Double, selected: String?) {
         self.progress = min(max(progress, 0), 1)
         generation += 1
         refresh()
+        select(selected, animated: true)
     }
 
     /// Replaces what the overlay shows, including while it is on screen.
@@ -59,11 +73,35 @@ final class WorkspaceOverlayWindow {
         }
         if needsRebuild || !panel.isVisible {
             rebuild()
+            select(selected, animated: false)
         }
         if !panel.isVisible {
             panel.orderFrontRegardless()
         }
         panel.alphaValue = progress
+    }
+
+    /// Puts the outline around the selected workspace's square, sliding it there if it was
+    /// already around another.
+    private func select(_ name: String?, animated: Bool) {
+        let frame = name.flatMap { squareFrames[$0] }
+        let wasHidden = outline.isHidden
+        let changed = selected != name
+        selected = name
+        outline.isHidden = frame == nil
+        guard let frame, changed || !animated else { return }
+
+        // Resolved here rather than once, so it follows the accent colour and appearance.
+        outline.layer?.borderColor = NSColor.controlAccentColor.cgColor
+        if animated && !wasHidden && panel.isVisible {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = Self.outlineMoveDuration
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                outline.animator().frame = frame
+            }
+        } else {
+            outline.frame = frame
+        }
     }
 
     /// Lays the squares out in a row, centred near the bottom of the screen under the pointer.
@@ -81,11 +119,15 @@ final class WorkspaceOverlayWindow {
         let width = CGFloat(count) * size + CGFloat(count - 1) * Self.spacing
 
         let row = NSView(frame: NSRect(x: 0, y: 0, width: width, height: size))
+        squareFrames = [:]
         for (index, workspace) in workspaces.enumerated() {
             let square = HUDStyle.makeBackground(containing: makeContent(for: workspace, size: size), size: size)
             square.setFrameOrigin(NSPoint(x: CGFloat(index) * (size + Self.spacing), y: 0))
             row.addSubview(square)
+            squareFrames[workspace.name] = square.frame
         }
+        outline.layer?.cornerRadius = HUDStyle.cornerRadius * size / HUDStyle.size
+        row.addSubview(outline)
         panel.contentView = row
         panel.setFrame(
             NSRect(x: screen.midX - width / 2, y: screen.minY + HUDStyle.bottomMargin, width: width, height: size),

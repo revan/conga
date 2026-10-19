@@ -37,6 +37,10 @@ public enum WorkspaceOverview {
         "aerospace list-windows --all --json --format '%{window-id}%{app-name}%{window-title}%{workspace}'"
     public static let focusedWorkspaceCommand = "aerospace list-workspaces --focused"
 
+    public static func switchCommand(to workspace: String) -> String {
+        "aerospace workspace \(workspace)"
+    }
+
     private struct Entry: Decodable {
         var id: Int
         var appName: String?
@@ -51,9 +55,10 @@ public enum WorkspaceOverview {
         }
     }
 
-    /// The numbered workspaces that have windows, in numeric order. Workspaces with other
-    /// names are left out, and so are empty ones, which `list-windows` never mentions.
-    /// Output that is not the expected JSON gives an empty list.
+    /// The numbered workspaces that have windows, and the focused one if it is numbered, in
+    /// numeric order. Workspaces with other names are left out, and so are other empty ones,
+    /// which `list-windows` never mentions. Output that is not the expected JSON gives an
+    /// empty list.
     public static func parse(windowsJSON: Data, focusedWorkspace: String) -> [Workspace] {
         guard let entries = try? JSONDecoder().decode([Entry].self, from: windowsJSON) else { return [] }
         let focused = focusedWorkspace.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -67,10 +72,66 @@ public enum WorkspaceOverview {
                 WorkspaceWindow(id: entry.id, appName: entry.appName ?? "", title: entry.title ?? "")
             )
         }
+        if let number = Int(focused), !entries.isEmpty, windows[number] == nil {
+            names[number] = focused
+            windows[number] = []
+        }
         return windows.keys.sorted().map { number in
             let name = names[number] ?? String(number)
             return Workspace(name: name, isFocused: name == focused, windows: windows[number] ?? [])
         }
+    }
+}
+
+/// Picks a workspace from how far the fingers have moved sideways during one swipe up: the
+/// focused workspace to begin with, and one further along the row for every `step`.
+///
+/// The row does not wrap. Moving past either end drags the starting point along, so that
+/// turning back takes effect at once, as it does for a swipe.
+public struct WorkspaceSeeker: Sendable {
+    /// Sideways travel, as a fraction of trackpad width, that moves the selection by one.
+    public static let step = 0.10
+
+    private var origin = 0.0
+    private var offset = 0.0
+
+    public init() {}
+
+    public mutating func select(offset: Double, in workspaces: [Workspace]) -> Workspace? {
+        self.offset = offset
+        guard let limits = Self.limits(in: workspaces) else { return nil }
+        let steps = rawSteps
+        if steps < limits.lowerBound {
+            origin = offset - Double(limits.lowerBound) * Self.step
+        } else if steps > limits.upperBound {
+            origin = offset - Double(limits.upperBound) * Self.step
+        }
+        return selection(in: workspaces)
+    }
+
+    /// The workspace that the last offset selects among `workspaces`.
+    public func selection(in workspaces: [Workspace]) -> Workspace? {
+        guard let limits = Self.limits(in: workspaces) else { return nil }
+        let steps = min(max(rawSteps, limits.lowerBound), limits.upperBound)
+        if let focused = workspaces.firstIndex(where: \.isFocused) {
+            return workspaces[focused + steps]
+        }
+        // The focused workspace is not in the row: come in from the end the fingers left.
+        if steps == 0 { return nil }
+        return workspaces[steps > 0 ? steps - 1 : workspaces.count + steps]
+    }
+
+    private var rawSteps: Int {
+        Int(((offset - origin) / Self.step).rounded())
+    }
+
+    /// How many steps there are to each end of the row.
+    private static func limits(in workspaces: [Workspace]) -> ClosedRange<Int>? {
+        guard !workspaces.isEmpty else { return nil }
+        if let focused = workspaces.firstIndex(where: \.isFocused) {
+            return -focused...(workspaces.count - 1 - focused)
+        }
+        return -workspaces.count...workspaces.count
     }
 }
 

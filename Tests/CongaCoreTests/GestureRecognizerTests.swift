@@ -24,7 +24,7 @@ private func progress(_ event: GestureEvent?) -> Double? {
 }
 
 private func peek(_ event: GestureEvent?) -> Double? {
-    if case .peek(let fraction) = event { fraction } else { nil }
+    if case .peek(let fraction, _) = event { fraction } else { nil }
 }
 
 @Suite struct GestureRecognizerTests {
@@ -147,24 +147,50 @@ private func peek(_ event: GestureEvent?) -> Double? {
         #expect(result.allSatisfy { peek($0) == nil })
     }
 
-    @Test func releasingAfterSwipeUpNeverFires() {
+    @Test func releasingAfterSwipeUpIsAPeekRelease() {
         let result = events([frame(4), frame(4, y: 0.9), frame(0)])
-        #expect(result == [.peek(fraction: 1), .cancelled])
+        #expect(result == [.peek(fraction: 1, offset: 0), .peekReleased])
+    }
+
+    @Test func peekReleaseNeedsOnlyTheLowerBound() {
+        #expect(events([frame(4), frame(4, y: 0.6), frame(0)]).last == .peekReleased)
+    }
+
+    @Test func swipingBackDownBeforeReleaseCancelsPeek() {
+        let result = events([frame(4), frame(4, y: 0.9), frame(4, y: 0.53), frame(0)])
+        #expect(result.last == .cancelled)
+    }
+
+    @Test func sidewaysMovementDuringPeekIsReportedFromWhereItLocked() throws {
+        let result = events([frame(4), frame(4, x: 0.52, y: 0.8), frame(4, x: 0.72, y: 0.8), frame(4, x: 0.32, y: 0.9)])
+        let offsets = result.compactMap { if case .peek(_, let offset) = $0 { offset } else { nil } }
+        try #require(offsets.count == 3)
+        #expect(offsets[0] == 0)
+        #expect(abs(offsets[1] - 0.2) < 1e-9)
+        #expect(abs(offsets[2] + 0.2) < 1e-9)
+    }
+
+    @Test func sidewaysOffsetSurvivesSwipingBackDown() throws {
+        let result = events([frame(4), frame(4, y: 0.8), frame(4, x: 0.7, y: 0.3)])
+        #expect(peek(result.last) == 0)
+        guard case .peek(_, let offset) = result.last else { return }
+        #expect(abs(offset - 0.2) < 1e-9)
     }
 
     @Test func swipingBackDownUndoesPeekAndRestartsFromTurnaroundPoint() throws {
         let result = events([frame(4), frame(4, y: 0.8), frame(4, y: 0.6), frame(4, y: 0.3), frame(4, y: 0.4), frame(4, y: 0.5)])
         try #require(result.count == 5)
-        #expect(result[0] == .peek(fraction: 1))
+        #expect(result[0] == .peek(fraction: 1, offset: 0))
         #expect(peek(result[1])! < 1)
-        #expect(result[2] == .peek(fraction: 0))
+        #expect(result[2] == .peek(fraction: 0, offset: 0))
         #expect(abs(peek(result[3])! - 1.0 / 3) < 1e-9)
-        #expect(result[4] == .peek(fraction: 1))
+        #expect(result[4] == .peek(fraction: 1, offset: 0))
     }
 
     @Test func horizontalDriftAfterSwipeUpStaysAPeek() {
         let result = events([frame(4), frame(4, y: 0.8), frame(4, x: 0.9, y: 0.8), frame(0)])
-        #expect(result == [.peek(fraction: 1), .peek(fraction: 1), .cancelled])
+        #expect(result.allSatisfy { peek($0) == 1 || $0 == .peekReleased })
+        #expect(result.last == .peekReleased)
     }
 
     @Test func verticalDriftAfterHorizontalSwipeDoesNotPeek() {
@@ -175,7 +201,7 @@ private func peek(_ event: GestureEvent?) -> Double? {
 
     @Test func fifthFingerCancelsPeek() {
         let result = events([frame(4), frame(4, y: 0.8), frame(5, y: 0.8), frame(4, y: 0.9), frame(0)])
-        #expect(result == [.peek(fraction: 1), .cancelled])
+        #expect(result == [.peek(fraction: 1, offset: 0), .cancelled])
     }
 
     @Test func diagonalSwipeThatIsMostlyHorizontalStillFires() {

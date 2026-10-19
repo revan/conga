@@ -13,6 +13,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Bumped on every refresh so the results of an older one are dropped.
     private var refreshGeneration = 0
     private var previews: [Int: CGImage] = [:]
+    /// The progress `--preview-workspaces` asked to hold the overlay at.
+    private var previewProgress: Double?
     private var model: SettingsModel!
     private var dispatcher: GestureDispatcher!
     private var settingsWindow: SettingsWindowController!
@@ -49,12 +51,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch update {
         case .show(let direction, let progress):
             indicator.show(direction, progress: progress)
-        case .showWorkspaces(let progress):
+        case .showWorkspaces(let progress, let selected):
             if !isPeeking {
                 isPeeking = true
                 refreshWorkspaces()
             }
-            overlay.show(progress: progress)
+            overlay.show(progress: progress, selected: selected)
         case .hide(let fired):
             isPeeking = false
             indicator.hide(fired: fired)
@@ -77,7 +79,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 focusedWorkspace: String(decoding: await focused ?? Data(), as: UTF8.self)
             )
             guard generation == refreshGeneration else { return }
+            dispatcher.workspaces = workspaces
             overlay.update(workspaces: workspaces, previews: previews)
+            if let previewProgress {
+                // No gesture is under way to select anything, so outline what one would start with.
+                overlay.show(progress: previewProgress, selected: workspaces.first(where: \.isFocused)?.name)
+            }
 
             let ids = workspaces.flatMap(\.windows).map(\.id)
             let captured = await WindowPreviews.capture(windowIDs: ids, maxPixelSize: 400)
@@ -124,7 +131,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
               arguments.indices.contains(flag + 1),
               let progress = Double(arguments[flag + 1])
         else { return }
-        apply(.showWorkspaces(progress: progress))
+        previewProgress = progress
+        apply(.showWorkspaces(progress: progress, selected: nil))
     }
 
     private func installStatusItem(foundTrackpad: Bool) {

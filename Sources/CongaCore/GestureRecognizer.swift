@@ -12,8 +12,11 @@ public enum GestureEvent: Equatable, Sendable {
     /// releasing would fire.
     case progress(SwipeDirection, fraction: Double)
     /// Four fingers are down and swiping up. `fraction` is 0 at the lower bound and 1 at the
-    /// trigger distance. Nothing fires for a swipe up; lifting ends it with `.cancelled`.
-    case peek(fraction: Double)
+    /// trigger distance. `offset` is how far the fingers have since moved sideways, as a
+    /// fraction of trackpad width, positive to the right.
+    case peek(fraction: Double, offset: Double)
+    /// Fingers were released after a swipe up, past the lower bound.
+    case peekReleased
     /// Fingers were released past the trigger threshold.
     case fired(SwipeDirection)
     /// The gesture ended without firing.
@@ -43,13 +46,16 @@ public struct GestureThresholds: Equatable, Sendable {
 /// starting point follows the fingers when they do, so swiping in the original direction
 /// again starts from wherever they turned around.
 ///
-/// Up is a direction too, reported as `.peek`. A swipe down belongs to someone else.
+/// Up is a direction too, reported as `.peek`. It has no trigger distance: releasing anywhere
+/// past the lower bound, where the swipe starts to show, is `.peekReleased`. A swipe down
+/// belongs to someone else.
 public struct GestureRecognizer: Sendable {
     public static let fingerCount = 4
 
     private enum Lock {
         case horizontal(SwipeDirection)
-        case up
+        /// `originX` is where the fingers were when the swipe up was recognised.
+        case up(originX: Double)
     }
 
     private enum State {
@@ -80,10 +86,14 @@ public struct GestureRecognizer: Sendable {
         case .tracking(let startX, let startY, var lock, let lastTravel):
             if count < Self.fingerCount {
                 state = count == 0 ? .idle : .ended
-                if case .horizontal(let direction) = lock, lastTravel >= thresholds.trigger {
+                switch lock {
+                case .horizontal(let direction) where lastTravel >= thresholds.trigger:
                     return .fired(direction)
+                case .up where fraction(of: lastTravel, thresholds: thresholds) > 0:
+                    return .peekReleased
+                default:
+                    return .cancelled
                 }
-                return .cancelled
             }
             if count > Self.fingerCount {
                 state = .ended
@@ -93,39 +103,35 @@ public struct GestureRecognizer: Sendable {
             let (x, y) = centroid(of: frame.touches)
             let dx = x - startX
             let dy = y - startY
-            if lock == nil && abs(dy) >= thresholds.lowerBound && abs(dy) > abs(dx) {
+            if case nil = lock, abs(dy) >= thresholds.lowerBound && abs(dy) > abs(dx) {
                 // The origin is bottom-left, so up is positive. A mostly downward swipe
                 // belongs to someone else (App Exposé).
                 guard dy > 0 else {
                     state = .ended
                     return .cancelled
                 }
-                lock = .up
+                lock = .up(originX: x)
             }
 
-            if case .up = lock {
+            if case .up(let originX) = lock {
                 if dy < 0 {
                     // Back below the start: restart from here.
-                    state = .tracking(startX: x, startY: y, lock: .up, travel: 0)
-                    return .peek(fraction: 0)
+                    state = .tracking(startX: x, startY: y, lock: lock, travel: 0)
+                    return .peek(fraction: 0, offset: x - originX)
                 }
-                state = .tracking(startX: startX, startY: startY, lock: .up, travel: dy)
-                return .peek(fraction: fraction(of: dy, thresholds: thresholds))
+                state = .tracking(startX: startX, startY: startY, lock: lock, travel: dy)
+                return .peek(fraction: fraction(of: dy, thresholds: thresholds), offset: x - originX)
             }
 
-            let direction: SwipeDirection
-            if case .horizontal(let locked) = lock {
-                direction = locked
-            } else {
-                direction = dx < 0 ? .left : .right
-            }
+            let lockedDirection: SwipeDirection? = if case .horizontal(let locked) = lock { locked } else { nil }
+            let direction = lockedDirection ?? (dx < 0 ? .left : .right)
             let travel = direction == .left ? -dx : dx
             if travel < 0 {
                 // Behind the start in a fixed direction: restart from here.
                 state = .tracking(startX: x, startY: y, lock: .horizontal(direction), travel: 0)
                 return .progress(direction, fraction: 0)
             }
-            let isLocked = lock != nil || travel >= thresholds.lowerBound
+            let isLocked = lockedDirection != nil || travel >= thresholds.lowerBound
             state = .tracking(
                 startX: startX, startY: startY, lock: isLocked ? .horizontal(direction) : nil, travel: travel
             )

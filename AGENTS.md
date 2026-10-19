@@ -7,7 +7,8 @@ While the fingers are down, an arrow in a glass box tracks progress; releasing p
 trigger distance runs the command, and swiping back before releasing cancels.
 Swiping four fingers up fades in a row of squares in the same place, one per numbered AeroSpace
 workspace that has windows, each showing the workspace number under previews of its windows.
-It runs nothing and goes away when the fingers lift.
+The focused workspace is outlined; moving the fingers sideways moves the outline along the row,
+and lifting switches to the outlined workspace.
 
 ## Commands
 
@@ -30,13 +31,14 @@ CI (`.github/workflows/test.yml`) runs `scripts/test.sh` on a `macos-26` runner 
 ## Layout
 
 - `Sources/CongaCore` — all logic, no AppKit. Everything here is unit tested.
-  - `GestureRecognizer` — touch frames → `.progress` / `.peek` / `.fired` / `.cancelled`.
+  - `GestureRecognizer` — touch frames → `.progress` / `.peek` / `.fired` / `.peekReleased` /
+    `.cancelled`.
   - `GestureDispatcher` — one recognizer per trackpad; runs commands, emits indicator updates.
   - `IndicatorModel` — progress → opacity and arrow offset.
   - `Settings`, `SettingsStore` — values, clamping, `UserDefaults` persistence.
   - `ShellCommandRunner` — `/bin/sh -c`, fire and forget, or `output(of:)` to read stdout.
-  - `WorkspaceOverview` — `aerospace` JSON → workspaces and their windows, and the overlay's
-    geometry.
+  - `WorkspaceOverview` — `aerospace` JSON → workspaces and their windows, the overlay's
+    geometry, and `WorkspaceSeeker`, which turns sideways travel into a selected workspace.
 - `Sources/Conga` — the AppKit/SwiftUI shell: status item, settings window, the two HUD panels
   (`IndicatorWindow`, `WorkspaceOverlayWindow`, sharing `HUDStyle`), `WindowPreviews`, and
   `MultitouchMonitor`. Keep it thin; it has no tests.
@@ -66,14 +68,25 @@ New behaviour goes in `CongaCore` with tests; the app target should only wire th
   one in the opposite direction until the fingers lift and touch again. The starting point
   follows the fingers while they are behind it, so swiping in the original direction again
   starts from where they turned around.
-- **Up is a direction, down is not.** A swipe up locks the same way and is reported as `.peek`
-  with the same start and trigger distances, as fractions of trackpad height. It never fires;
-  lifting always ends it with `.cancelled`. Fingers moving up are a swipe up whatever
-  `naturalScroll` says. A swipe down still cancels the gesture.
+- **Up is a direction, down is not.** A swipe up locks the same way and is reported as `.peek`,
+  fading in between the same start and trigger distances, as fractions of trackpad height.
+  Fingers moving up are a swipe up whatever `naturalScroll` says. A swipe down still cancels
+  the gesture.
+- **A swipe up has no trigger distance.** Lifting anywhere past the indicator start distance,
+  that is, while the overlay is at all visible, switches to the outlined workspace
+  (`aerospace workspace <name>`, not configurable). Swiping back down until it has faded out
+  cancels. Nothing runs if the outline is still on the focused workspace.
+- **Seeking.** Once a swipe up is recognised, every tenth of the trackpad's width the fingers
+  move sideways moves the outline one workspace, in the direction of the fingers whatever
+  `naturalScroll` says. The row does not wrap; pushing past an end drags the starting point
+  along, like a swipe. If the focused workspace is not in the row (it has a name, not a
+  number), nothing is outlined until the fingers move.
 - **Workspace overlay data.** Each swipe up runs `aerospace list-windows --all --json` once,
   shows the result with the previews from last time, then captures new previews and updates in
-  place. Only workspaces whose name is a number are shown, and `list-windows` never mentions
-  empty ones. If `aerospace` fails the overlay does not appear.
+  place. Only workspaces whose name is a number are shown: those with windows, plus the
+  focused one. If `aerospace` fails the overlay does not appear. `GestureDispatcher.workspaces`
+  holds the same list for seeking, so until a swipe's refresh arrives, a few tens of
+  milliseconds in, it selects from the previous swipe's list.
 - **Previews need Screen Recording permission.** They come from ScreenCaptureKit
   (`CGWindowListCreateImage` is obsolete in the macOS 15 SDK). Without the permission, or for
   any window that fails to capture, the tile shows the window's title instead. The app asks at

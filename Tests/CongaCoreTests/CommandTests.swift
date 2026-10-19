@@ -79,11 +79,76 @@ private final class RecordingRunner: CommandRunning {
         #expect(updates().last == .hide(fired: true))
     }
 
-    @Test func swipeUpShowsWorkspacesAndRunsNothing() {
+    private static let workspaces = ["1", "2", "3", "4"].map {
+        Workspace(name: $0, isFocused: $0 == "2", windows: [])
+    }
+
+    @Test func swipeUpSelectsFocusedWorkspaceAndReleasingRunsNothing() {
         let (dispatcher, runner, updates) = makeDispatcher()
+        dispatcher.workspaces = Self.workspaces
         for f in [frame(4), frame(4, y: 0.52), frame(4, y: 0.9), frame(0)] { dispatcher.handle(f) }
         #expect(runner.commands.isEmpty)
-        #expect(updates() == [.show(.left, progress: 0), .showWorkspaces(progress: 1), .hide(fired: false)])
+        #expect(updates() == [
+            .show(.left, progress: 0), .showWorkspaces(progress: 1, selected: "2"), .hide(fired: true),
+        ])
+    }
+
+    @Test func movingSidewaysSeeksAndReleasingSwitches() {
+        let (dispatcher, runner, updates) = makeDispatcher()
+        dispatcher.workspaces = Self.workspaces
+        for f in [frame(4), frame(4, y: 0.9), frame(4, x: 0.61, y: 0.9), frame(4, x: 0.71, y: 0.9), frame(0)] {
+            dispatcher.handle(f)
+        }
+        #expect(updates() == [
+            .showWorkspaces(progress: 1, selected: "2"), .showWorkspaces(progress: 1, selected: "3"),
+            .showWorkspaces(progress: 1, selected: "4"), .hide(fired: true),
+        ])
+        #expect(runner.commands == ["aerospace workspace 4"])
+    }
+
+    @Test func seekingIgnoresNaturalScroll() {
+        var settings = Settings()
+        settings.naturalScroll = false
+        let (dispatcher, runner, _) = makeDispatcher(settings)
+        dispatcher.workspaces = Self.workspaces
+        for f in [frame(4), frame(4, y: 0.9), frame(4, x: 0.39, y: 0.9), frame(0)] { dispatcher.handle(f) }
+        #expect(runner.commands == ["aerospace workspace 1"])
+    }
+
+    @Test func swipingBackDownAfterSeekingSwitchesNothing() {
+        let (dispatcher, runner, updates) = makeDispatcher()
+        dispatcher.workspaces = Self.workspaces
+        for f in [frame(4), frame(4, y: 0.9), frame(4, x: 0.61, y: 0.9), frame(4, x: 0.61, y: 0.52), frame(0)] {
+            dispatcher.handle(f)
+        }
+        #expect(runner.commands.isEmpty)
+        #expect(updates().last == .hide(fired: false))
+    }
+
+    @Test func releaseUsesWorkspacesAsTheyAreNow() {
+        let (dispatcher, runner, _) = makeDispatcher()
+        dispatcher.workspaces = Self.workspaces
+        for f in [frame(4), frame(4, y: 0.9), frame(4, x: 0.61, y: 0.9)] { dispatcher.handle(f) }
+        // A refresh arrives mid-gesture: workspace 3 turns out to be the focused one.
+        dispatcher.workspaces = ["1", "3", "5"].map { Workspace(name: $0, isFocused: $0 == "3", windows: []) }
+        dispatcher.handle(frame(0))
+        #expect(runner.commands == ["aerospace workspace 5"])
+    }
+
+    @Test func eachSwipeUpStartsFromTheFocusedWorkspace() {
+        let (dispatcher, runner, updates) = makeDispatcher()
+        dispatcher.workspaces = Self.workspaces
+        for f in [frame(4), frame(4, y: 0.9), frame(4, x: 0.61, y: 0.9), frame(0)] { dispatcher.handle(f) }
+        for f in [frame(4), frame(4, y: 0.9), frame(0)] { dispatcher.handle(f) }
+        #expect(runner.commands == ["aerospace workspace 3"])
+        #expect(updates().suffix(2) == [.showWorkspaces(progress: 1, selected: "2"), .hide(fired: true)])
+    }
+
+    @Test func swipeUpWithNoWorkspacesSelectsNothing() {
+        let (dispatcher, runner, updates) = makeDispatcher()
+        for f in [frame(4), frame(4, y: 0.9), frame(4, x: 0.8, y: 0.9), frame(0)] { dispatcher.handle(f) }
+        #expect(runner.commands.isEmpty)
+        #expect(updates().first == .showWorkspaces(progress: 1, selected: nil))
     }
 
     @Test func disabledIgnoresGestures() {
