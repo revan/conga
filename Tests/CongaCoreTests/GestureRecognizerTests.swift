@@ -208,6 +208,26 @@ private func peek(_ event: GestureEvent?) -> Double? {
         #expect(result.last == .peekReleased)
     }
 
+    @Test func seekingAtADownwardAngleDoesNotFadePeek() {
+        // Fingers moving left and down at about 30 degrees, as a hand that is not level does.
+        var frames = [frame(4), frame(4, y: 0.75)]
+        for step in 1...6 {
+            frames.append(frame(4, x: 0.5 - 0.05 * Double(step), y: 0.75 - 0.03 * Double(step)))
+        }
+        let result = events(frames + [frame(0)])
+        #expect(result.dropLast().allSatisfy { peek($0) == 1 })
+        #expect(result.last == .peekReleased)
+    }
+
+    @Test func swipingDownAfterSeekingAtAnAngleStillCancels() {
+        let result = events([
+            frame(4), frame(4, y: 0.75), frame(4, x: 0.3, y: 0.65), frame(4, x: 0.3, y: 0.3), frame(0),
+        ])
+        #expect(peek(result[1]) == 1)
+        #expect(peek(result[2]) == 0)
+        #expect(result.last == .cancelled)
+    }
+
     @Test func verticalDriftAfterHorizontalSwipeDoesNotPeek() {
         let result = events([frame(4), frame(4, x: 0.6), frame(4, x: 0.75, y: 0.95), frame(0)])
         #expect(result.allSatisfy { peek($0) == nil })

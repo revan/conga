@@ -88,7 +88,10 @@ New behaviour goes in `CongaCore` with tests; the app target should only wire th
 - **A swipe up has no trigger distance.** Lifting anywhere past the indicator start distance,
   that is, while the overlay is at all visible, switches to the outlined workspace
   (`aerospace workspace <name>`, not configurable). Swiping back down until it has faded out
-  cancels. Nothing runs if the outline is still on the focused workspace.
+  cancels. Nothing runs if the outline is still on the focused workspace. Once the swipe up is
+  recognised, a frame in which the fingers move more sideways than up or down does not change
+  how far up the swipe is, so seeking with a hand that is not level does not fade the overlay;
+  moving mostly down still does.
 - **Seeking.** Once a swipe up is recognised, every tenth of the trackpad's width the fingers
   move sideways moves the outline one workspace, in the direction of the fingers whatever
   `naturalScroll` says. The row does not wrap; pushing past an end drags the starting point

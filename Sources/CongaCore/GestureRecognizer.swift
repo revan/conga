@@ -48,7 +48,9 @@ public struct GestureThresholds: Equatable, Sendable {
 ///
 /// Up is a direction too, reported as `.peek`. It has no trigger distance: releasing anywhere
 /// past the lower bound, where the swipe starts to show, is `.peekReleased`. A swipe down
-/// belongs to someone else.
+/// belongs to someone else. Once a swipe up is recognised, frames that move more sideways than
+/// vertically do not change how far up it is, so seeking along the overlay at an angle does
+/// not fade it.
 ///
 /// Touches the framework labels as a palm are dropped before anything else, so a palm resting
 /// on the trackpad neither counts as a finger nor stops four fingers starting a gesture.
@@ -62,14 +64,16 @@ public struct GestureRecognizer: Sendable {
 
     private enum Lock {
         case horizontal(SwipeDirection)
-        /// `originX` is where the fingers were when the swipe up was recognised.
-        case up(originX: Double)
+        /// `originX` is where the fingers were when the swipe up was recognised; `lastX` and
+        /// `lastY` are where they were in the previous frame.
+        case up(originX: Double, lastX: Double, lastY: Double)
     }
 
     private enum State {
         case idle
         /// `fingers` are the identifiers of the touches being followed. `travel` is the
-        /// distance moved in the locked direction from the start.
+        /// distance moved in the locked direction from the start, or for a swipe up, the
+        /// vertical distance counted so far.
         case tracking(fingers: Set<Int>, startX: Double, startY: Double, lock: Lock?, travel: Double)
         /// The gesture is over; wait for every finger to lift before starting another.
         case ended
@@ -94,7 +98,7 @@ public struct GestureRecognizer: Sendable {
             }
             return nil
 
-        case .tracking(let fingers, let startX, let startY, var lock, let lastTravel):
+        case .tracking(let fingers, let startX, let startY, let lock, let lastTravel):
             let touches = frame.touches.filter { fingers.contains($0.id) }
             if touches.count < fingers.count {
                 state = count == 0 ? .idle : .ended
@@ -122,17 +126,24 @@ public struct GestureRecognizer: Sendable {
                     state = .ended
                     return .cancelled
                 }
-                lock = .up(originX: x)
+                state = .tracking(
+                    fingers: fingers, startX: startX, startY: startY, lock: .up(originX: x, lastX: x, lastY: y), travel: dy
+                )
+                return .peek(fraction: fraction(of: dy, thresholds: thresholds), offset: 0)
             }
 
-            if case .up(let originX) = lock {
-                if dy < 0 {
-                    // Back below the start: restart from here.
-                    state = .tracking(fingers: fingers, startX: x, startY: y, lock: lock, travel: 0)
-                    return .peek(fraction: 0, offset: x - originX)
-                }
-                state = .tracking(fingers: fingers, startX: startX, startY: startY, lock: lock, travel: dy)
-                return .peek(fraction: fraction(of: dy, thresholds: thresholds), offset: x - originX)
+            if case .up(let originX, let lastX, let lastY) = lock {
+                // Seeking sideways is rarely level, so a frame that moves more sideways than
+                // up or down leaves the vertical travel alone. Below zero is back below the
+                // start, and restarts from here.
+                let stepX = x - lastX
+                let stepY = y - lastY
+                let travel = abs(stepY) > abs(stepX) ? max(lastTravel + stepY, 0) : lastTravel
+                state = .tracking(
+                    fingers: fingers, startX: startX, startY: startY, lock: .up(originX: originX, lastX: x, lastY: y),
+                    travel: travel
+                )
+                return .peek(fraction: fraction(of: travel, thresholds: thresholds), offset: x - originX)
             }
 
             let lockedDirection: SwipeDirection? = if case .horizontal(let locked) = lock { locked } else { nil }
