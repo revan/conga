@@ -11,6 +11,16 @@ func frame(_ count: Int, x: Double = 0.5, y: Double = 0.5) -> TouchFrame {
     return TouchFrame(touches: touches)
 }
 
+/// `frame` with one more touch, far from the fingers, as a palm makes.
+func withPalm(_ frame: TouchFrame, x: Double = 0.9, y: Double = 0.1) -> TouchFrame {
+    TouchFrame(timestamp: frame.timestamp, touches: frame.touches + [Touch(id: 99, x: x, y: y)])
+}
+
+/// `frame` with a touch the framework labels as a palm.
+func withLabelledPalm(_ frame: TouchFrame, x: Double = 0.05, y: Double = 0.7) -> TouchFrame {
+    TouchFrame(timestamp: frame.timestamp, touches: frame.touches + [Touch(id: 98, x: x, y: y, part: 6)])
+}
+
 private let thresholds = GestureThresholds(lowerBound: 0.05, trigger: 0.20)
 
 /// Feeds frames through a fresh recognizer and returns the non-nil events.
@@ -104,9 +114,14 @@ private func peek(_ event: GestureEvent?) -> Double? {
         #expect(result.isEmpty)
     }
 
-    @Test func fifthFingerCancels() {
-        let result = events([frame(4), frame(4, x: 0.8), frame(5, x: 0.8), frame(4, x: 0.8), frame(0)])
-        #expect(result == [.progress(.right, fraction: 1), .cancelled])
+    @Test func fifthFingerBeforeDirectionIsFixedCancels() {
+        let result = events([frame(4), frame(5), frame(4, x: 0.9), frame(0)])
+        #expect(result == [.cancelled])
+    }
+
+    @Test func extraTouchAfterDirectionIsFixedIsIgnored() {
+        let result = events([frame(4), frame(4, x: 0.8), withPalm(frame(4, x: 0.8)), frame(4, x: 0.8), frame(0)])
+        #expect(result == [.progress(.right, fraction: 1), .progress(.right, fraction: 1), .progress(.right, fraction: 1), .fired(.right)])
     }
 
     @Test func staggeredLiftFiresOnce() {
@@ -199,9 +214,46 @@ private func peek(_ event: GestureEvent?) -> Double? {
         #expect(result.last == .fired(.right))
     }
 
-    @Test func fifthFingerCancelsPeek() {
-        let result = events([frame(4), frame(4, y: 0.8), frame(5, y: 0.8), frame(4, y: 0.9), frame(0)])
-        #expect(result == [.peek(fraction: 1, offset: 0), .cancelled])
+    @Test func palmDuringPeekDoesNotMoveItOrEndIt() {
+        let result = events([
+            frame(4), frame(4, y: 0.8), withPalm(frame(4, y: 0.8)), withPalm(frame(4, y: 0.8), x: 0.1, y: 0.9),
+            frame(4, y: 0.8), frame(0),
+        ])
+        #expect(result == Array(repeating: .peek(fraction: 1, offset: 0), count: 4) + [.peekReleased])
+    }
+
+    @Test func palmRestingBeforeFingersLandDoesNotStopSwipeUp() {
+        let palm = withLabelledPalm(frame(0))
+        let result = events([
+            palm, withLabelledPalm(frame(4)), withLabelledPalm(frame(4, y: 0.8)), withLabelledPalm(frame(4, y: 0.9)), palm,
+            frame(0),
+        ])
+        #expect(result == [.peek(fraction: 1, offset: 0), .peek(fraction: 1, offset: 0), .peekReleased])
+    }
+
+    @Test func labelledPalmLandingBeforeDirectionIsFixedDoesNotCancel() {
+        let result = events([frame(4), withLabelledPalm(frame(4)), withLabelledPalm(frame(4, x: 0.8)), frame(0)])
+        #expect(result.last == .fired(.right))
+    }
+
+    @Test func labelledPalmDoesNotMakeUpTheFourthFinger() {
+        let result = events([withLabelledPalm(frame(3)), withLabelledPalm(frame(3, x: 0.9)), frame(0)])
+        #expect(result.isEmpty)
+    }
+
+    @Test func newGestureCanStartWhileAPalmStaysDown() {
+        let result = events([
+            withLabelledPalm(frame(4)), withLabelledPalm(frame(4, x: 0.8)), withLabelledPalm(frame(0)),
+            withLabelledPalm(frame(4, x: 0.8)), withLabelledPalm(frame(4, x: 0.5)), withLabelledPalm(frame(0)),
+        ])
+        #expect(result.filter { if case .fired = $0 { true } else { false } } == [.fired(.right), .fired(.left)])
+    }
+
+    @Test func liftingAFingerWhileAPalmIsDownEndsPeek() {
+        let fingers = frame(4, y: 0.8)
+        let oneLifted = TouchFrame(touches: Array(fingers.touches.dropFirst()))
+        let result = events([frame(4), fingers, withPalm(fingers), withPalm(oneLifted), withPalm(frame(4, y: 0.8)), frame(0)])
+        #expect(result == [.peek(fraction: 1, offset: 0), .peek(fraction: 1, offset: 0), .peekReleased])
     }
 
     @Test func diagonalSwipeThatIsMostlyHorizontalStillFires() {

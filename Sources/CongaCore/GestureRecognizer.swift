@@ -49,6 +49,14 @@ public struct GestureThresholds: Equatable, Sendable {
 /// Up is a direction too, reported as `.peek`. It has no trigger distance: releasing anywhere
 /// past the lower bound, where the swipe starts to show, is `.peekReleased`. A swipe down
 /// belongs to someone else.
+///
+/// Touches the framework labels as a palm are dropped before anything else, so a palm resting
+/// on the trackpad neither counts as a finger nor stops four fingers starting a gesture.
+///
+/// The gesture follows the four touches that started it, by identifier. Once its direction is
+/// fixed, any other touch, such as a palm brushing the trackpad, is ignored rather than moving
+/// the centroid or ending the gesture; lifting any of the four ends it. Before then, a fifth
+/// touch cancels, so five fingers put down together are never a swipe.
 public struct GestureRecognizer: Sendable {
     public static let fingerCount = 4
 
@@ -60,8 +68,9 @@ public struct GestureRecognizer: Sendable {
 
     private enum State {
         case idle
-        /// `travel` is the distance moved in the locked direction from the start.
-        case tracking(startX: Double, startY: Double, lock: Lock?, travel: Double)
+        /// `fingers` are the identifiers of the touches being followed. `travel` is the
+        /// distance moved in the locked direction from the start.
+        case tracking(fingers: Set<Int>, startX: Double, startY: Double, lock: Lock?, travel: Double)
         /// The gesture is over; wait for every finger to lift before starting another.
         case ended
     }
@@ -71,20 +80,23 @@ public struct GestureRecognizer: Sendable {
     public init() {}
 
     public mutating func handle(_ frame: TouchFrame, thresholds: GestureThresholds) -> GestureEvent? {
+        var frame = frame
+        frame.touches.removeAll(where: \.isPalm)
         let count = frame.touches.count
 
         switch state {
         case .idle:
             if count == Self.fingerCount {
                 let (x, y) = centroid(of: frame.touches)
-                state = .tracking(startX: x, startY: y, lock: nil, travel: 0)
+                state = .tracking(fingers: Set(frame.touches.map(\.id)), startX: x, startY: y, lock: nil, travel: 0)
             } else if count > Self.fingerCount {
                 state = .ended
             }
             return nil
 
-        case .tracking(let startX, let startY, var lock, let lastTravel):
-            if count < Self.fingerCount {
+        case .tracking(let fingers, let startX, let startY, var lock, let lastTravel):
+            let touches = frame.touches.filter { fingers.contains($0.id) }
+            if touches.count < fingers.count {
                 state = count == 0 ? .idle : .ended
                 switch lock {
                 case .horizontal(let direction) where lastTravel >= thresholds.trigger:
@@ -95,12 +107,12 @@ public struct GestureRecognizer: Sendable {
                     return .cancelled
                 }
             }
-            if count > Self.fingerCount {
+            if lock == nil && count > touches.count {
                 state = .ended
                 return .cancelled
             }
 
-            let (x, y) = centroid(of: frame.touches)
+            let (x, y) = centroid(of: touches)
             let dx = x - startX
             let dy = y - startY
             if case nil = lock, abs(dy) >= thresholds.lowerBound && abs(dy) > abs(dx) {
@@ -116,10 +128,10 @@ public struct GestureRecognizer: Sendable {
             if case .up(let originX) = lock {
                 if dy < 0 {
                     // Back below the start: restart from here.
-                    state = .tracking(startX: x, startY: y, lock: lock, travel: 0)
+                    state = .tracking(fingers: fingers, startX: x, startY: y, lock: lock, travel: 0)
                     return .peek(fraction: 0, offset: x - originX)
                 }
-                state = .tracking(startX: startX, startY: startY, lock: lock, travel: dy)
+                state = .tracking(fingers: fingers, startX: startX, startY: startY, lock: lock, travel: dy)
                 return .peek(fraction: fraction(of: dy, thresholds: thresholds), offset: x - originX)
             }
 
@@ -128,12 +140,12 @@ public struct GestureRecognizer: Sendable {
             let travel = direction == .left ? -dx : dx
             if travel < 0 {
                 // Behind the start in a fixed direction: restart from here.
-                state = .tracking(startX: x, startY: y, lock: .horizontal(direction), travel: 0)
+                state = .tracking(fingers: fingers, startX: x, startY: y, lock: .horizontal(direction), travel: 0)
                 return .progress(direction, fraction: 0)
             }
             let isLocked = lockedDirection != nil || travel >= thresholds.lowerBound
             state = .tracking(
-                startX: startX, startY: startY, lock: isLocked ? .horizontal(direction) : nil, travel: travel
+                fingers: fingers, startX: startX, startY: startY, lock: isLocked ? .horizontal(direction) : nil, travel: travel
             )
             return .progress(direction, fraction: fraction(of: travel, thresholds: thresholds))
 

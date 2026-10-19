@@ -19,6 +19,7 @@ scripts/bundle.sh      # release build wrapped in build/Conga.app, ad-hoc signed
 open build/Conga.app
 build/Conga.app/Contents/MacOS/Conga --preview-indicator 0.6   # hold the HUD at 60%; negative = left swipe
 build/Conga.app/Contents/MacOS/Conga --preview-workspaces 1     # hold the workspace overlay fully shown
+build/Conga.app/Contents/MacOS/Conga --log-touches > build/touches.log   # record raw touches (quit the running app first)
 ```
 
 Use `scripts/test.sh` rather than bare `swift test`: the machine this was built on has only
@@ -68,6 +69,16 @@ New behaviour goes in `CongaCore` with tests; the app target should only wire th
   one in the opposite direction until the fingers lift and touch again. The starting point
   follows the fingers while they are behind it, so swiping in the original direction again
   starts from where they turned around.
+- **Palms.** MultitouchSupport labels each contact (`MTTouch.fingerID`, carried as `Touch.part`):
+  1 thumb, 2–5 fingers, 6–7 palm. The recognizer drops palm-labelled touches before anything
+  else, so a palm resting on the trackpad neither counts as a finger nor blocks a swipe.
+  Measured with `--log-touches`, the label is set from a palm's first frame, while it is still
+  fingertip-sized; size alone cannot separate a palm from the thumb. As a backstop for
+  contacts the label misses, the recognizer also follows the four touches that started a
+  gesture, by identifier, and positions come from those alone. Once the direction is fixed, any other touch (a palm
+  brushing the trackpad) is ignored instead of shifting the centroid or cancelling; lifting
+  one of the four ends the gesture. Before the direction is fixed a fifth touch still cancels,
+  so five fingers put down together never swipe.
 - **Up is a direction, down is not.** A swipe up locks the same way and is reported as `.peek`,
   fading in between the same start and trigger distances, as fractions of trackpad height.
   Fingers moving up are a swipe up whatever `naturalScroll` says. A swipe down still cancels
