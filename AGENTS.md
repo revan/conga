@@ -39,11 +39,12 @@ CI (`.github/workflows/test.yml`) runs `scripts/test.sh` on a `macos-26` runner 
   - `Settings`, `SettingsStore` — values, clamping, `UserDefaults` persistence.
   - `ShellCommandRunner` — `/bin/sh -c`, fire and forget, `output(of:)` to read stdout, or
     `lines(of:)` to follow it line by line.
+  - `ScrollFilter` — which scroll and gesture events to drop while the workspace overlay is open.
   - `WorkspaceOverview` — `aerospace` JSON → workspaces and their windows, the overlay's
     geometry, and `WorkspaceSeeker`, which turns sideways travel into a selected workspace.
 - `Sources/Conga` — the AppKit/SwiftUI shell: status item, settings window, the two HUD panels
-  (`IndicatorWindow`, `WorkspaceOverlayWindow`, sharing `HUDStyle`), `WindowPreviews`, and
-  `MultitouchMonitor`. Keep it thin; it has no tests.
+  (`IndicatorWindow`, `WorkspaceOverlayWindow`, sharing `HUDStyle`), `WindowPreviews`,
+  `ScrollBlocker`, and `MultitouchMonitor`. Keep it thin; it has no tests.
 - `Sources/CMultitouch` — C declarations for the private framework. No code.
 - `Tests/CongaCoreTests` — tests for `CongaCore`.
 
@@ -111,6 +112,17 @@ New behaviour goes in `CongaCore` with tests; the app target should only wire th
   launch, and macOS asks again now and then about bypassing its window picker. The bundle is
   ad-hoc signed, so every `scripts/bundle.sh` build is a new app to the permission system and
   has to be granted again.
+- **The overlay swallows scrolling.** MultitouchSupport only observes, so the fingers that
+  seek along the overlay also scroll the window under the pointer. While the overlay is up,
+  `ScrollBlocker` drops scroll and trackpad gesture events with a `CGEventTap`, and after it
+  closes keeps dropping that scroll's remaining phases and momentum until a new scroll starts.
+  The tap is enabled only while there is something to drop, and runs on its own thread: while
+  it is enabled the window server holds every scroll event until it answers, and waiting on
+  the main thread, busy drawing the overlay, froze the overlay and the gestures. A tap that drops events needs
+  Accessibility permission, asked for at launch; without it scrolling passes through (the
+  log says so), the tap is tried again on each swipe up, so granting needs no restart, and
+  like Screen Recording it has to be granted again after each `scripts/bundle.sh`. Scrolling
+  before the swipe up is recognised (under the indicator start distance) still gets through.
 - **Previews are tiled, not positioned.** AeroSpace parks the windows of hidden workspaces
   off-screen, so their real positions say nothing; each square lays its windows out in a grid.
 - **Aborted swipes retreat, then fade.** On release below the trigger the arrow slides back to

@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let monitor = MultitouchMonitor()
     private let indicator = IndicatorWindow()
     private let overlay = WorkspaceOverlayWindow()
+    private let scrollBlocker = ScrollBlocker()
     private let shell = ShellCommandRunner(environment: ShellCommandRunner.loginShellEnvironment())
     /// True from the first frame of a swipe up until the indicator is next hidden.
     private var isPeeking = false
@@ -36,6 +37,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Asked for here, once, rather than in the middle of a gesture. Without it the
         // overlay shows window names instead of previews.
         CGRequestScreenCaptureAccess()
+        // Without it the fingers seeking along the overlay also scroll the window under it.
+        scrollBlocker.start()
 
         model = SettingsModel(settings: settings)
         model.onChange = { [weak self] settings in
@@ -67,6 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .showWorkspaces(let progress, let selected):
             if !isPeeking {
                 isPeeking = true
+                scrollBlocker.isBlocking = true
                 if liveFocus == nil {
                     // The list may say the wrong workspace is focused. Outline nothing until the
                     // refresh says which one is.
@@ -77,6 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             overlay.show(progress: progress, selected: selected)
         case .hide(let fired):
             isPeeking = false
+            scrollBlocker.isBlocking = false
             indicator.hide(fired: fired)
             overlay.hide()
         }
