@@ -269,11 +269,39 @@ private func peek(_ event: GestureEvent?) -> Double? {
         #expect(result.filter { if case .fired = $0 { true } else { false } } == [.fired(.right), .fired(.left)])
     }
 
-    @Test func liftingAFingerWhileAPalmIsDownEndsPeek() {
+    @Test func fingerSlidingOffTheEdgeKeepsPeekHeld() {
+        let fingers = frame(4, x: 0.8, y: 0.8)
+        let oneLifted = TouchFrame(touches: Array(fingers.touches.dropLast()))
+        let movedOn = TouchFrame(touches: oneLifted.touches.map { Touch(id: $0.id, x: $0.x - 0.1, y: $0.y) })
+        let result = events([frame(4, x: 0.8), fingers, oneLifted, movedOn, frame(0)])
+        // The centroid jumps when the finger lifts; that frame neither seeks nor fades.
+        #expect(result.count == 4)
+        #expect(result.first == .peek(fraction: 1, offset: 0))
+        #expect(result.dropFirst().first == .peek(fraction: 1, offset: 0))
+        guard result.count == 4, case .peek(1, let moved) = result[2] else { Issue.record("\(result)"); return }
+        #expect(abs(moved + 0.1) < 1e-9)
+        #expect(result.last == .peekReleased)
+    }
+
+    @Test func liftedFingerReturningDuringPeekIsIgnored() {
         let fingers = frame(4, y: 0.8)
         let oneLifted = TouchFrame(touches: Array(fingers.touches.dropFirst()))
-        let result = events([frame(4), fingers, withPalm(fingers), withPalm(oneLifted), withPalm(frame(4, y: 0.8)), frame(0)])
-        #expect(result == [.peek(fraction: 1, offset: 0), .peek(fraction: 1, offset: 0), .peekReleased])
+        let result = events([frame(4), fingers, withPalm(fingers), withPalm(oneLifted), fingers, frame(0)])
+        let still = result.dropLast().allSatisfy { if case .peek(1, let offset) = $0 { abs(offset) < 1e-9 } else { false } }
+        #expect(result.count == 5 && still)
+        #expect(result.last == .peekReleased)
+    }
+
+    @Test func liftingTwoFingersEndsPeek() {
+        let fingers = frame(4, y: 0.8)
+        let twoLifted = TouchFrame(touches: Array(fingers.touches.dropFirst(2)))
+        let result = events([frame(4), fingers, twoLifted, fingers, frame(0)])
+        #expect(result == [.peek(fraction: 1, offset: 0), .peekReleased])
+    }
+
+    @Test func liftingOneFingerStillEndsHorizontalSwipe() {
+        let result = events([frame(4), frame(4, x: 0.8), frame(3, x: 0.8), frame(0)])
+        #expect(result == [.progress(.right, fraction: 1), .fired(.right)])
     }
 
     @Test func diagonalSwipeThatIsMostlyHorizontalStillFires() {

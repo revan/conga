@@ -57,10 +57,14 @@ public struct GestureThresholds: Equatable, Sendable {
 ///
 /// The gesture follows the four touches that started it, by identifier. Once its direction is
 /// fixed, any other touch, such as a palm brushing the trackpad, is ignored rather than moving
-/// the centroid or ending the gesture; lifting any of the four ends it. Before then, a fifth
-/// touch cancels, so five fingers put down together are never a swipe.
+/// the centroid or ending the gesture; lifting any of the four ends it. A swipe up is the
+/// exception: seeking can slide a finger off the trackpad's edge, so it stays held while three
+/// of the four are down. Before the direction is fixed, a fifth touch cancels, so five fingers
+/// put down together are never a swipe.
 public struct GestureRecognizer: Sendable {
     public static let fingerCount = 4
+    /// How many of the four fingers keep a swipe up held after the others lift.
+    public static let minimumHeldFingers = 3
 
     private enum Lock {
         case horizontal(SwipeDirection)
@@ -100,6 +104,19 @@ public struct GestureRecognizer: Sendable {
 
         case .tracking(let fingers, let startX, let startY, let lock, let lastTravel):
             let touches = frame.touches.filter { fingers.contains($0.id) }
+            if case .up(let originX, let lastX, let lastY) = lock, touches.count < fingers.count,
+                touches.count >= Self.minimumHeldFingers
+            {
+                // A finger slid off the edge while seeking. Follow the rest, and count this
+                // frame as no movement, so the centroid jumping to the remaining fingers
+                // neither seeks nor fades.
+                let (x, y) = centroid(of: touches)
+                state = .tracking(
+                    fingers: Set(touches.map(\.id)), startX: startX, startY: startY,
+                    lock: .up(originX: originX + x - lastX, lastX: x, lastY: y), travel: lastTravel
+                )
+                return .peek(fraction: fraction(of: lastTravel, thresholds: thresholds), offset: lastX - originX)
+            }
             if touches.count < fingers.count {
                 state = count == 0 ? .idle : .ended
                 switch lock {

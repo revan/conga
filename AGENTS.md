@@ -79,7 +79,9 @@ New behaviour goes in `CongaCore` with tests; the app target should only wire th
   contacts the label misses, the recognizer also follows the four touches that started a
   gesture, by identifier, and positions come from those alone. Once the direction is fixed, any other touch (a palm
   brushing the trackpad) is ignored instead of shifting the centroid or cancelling; lifting
-  one of the four ends the gesture. Before the direction is fixed a fifth touch still cancels,
+  one of the four ends a horizontal swipe. A swipe up stays held while three of the four are
+  down, because seeking slides fingers off the trackpad's edge; the frame a finger lifts counts
+  as no movement, so the centroid jumping to the other three neither seeks nor fades. Before the direction is fixed a fifth touch still cancels,
   so five fingers put down together never swipe.
 - **Up is a direction, down is not.** A swipe up locks the same way and is reported as `.peek`,
   fading in between the same start and trigger distances, as fractions of trackpad height.
