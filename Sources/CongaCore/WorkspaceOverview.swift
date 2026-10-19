@@ -36,6 +36,9 @@ public enum WorkspaceOverview {
     public static let listWindowsCommand =
         "aerospace list-windows --all --json --format '%{window-id}%{app-name}%{window-title}%{workspace}'"
     public static let focusedWorkspaceCommand = "aerospace list-workspaces --focused"
+    /// Prints a line of JSON when it starts and again every time the focused workspace changes.
+    /// AeroSpace has had `subscribe` since 0.21; older versions fail it.
+    public static let subscribeToFocusCommand = "aerospace subscribe focused-workspace-changed"
 
     public static func switchCommand(to workspace: String) -> String {
         "aerospace workspace \(workspace)"
@@ -80,6 +83,31 @@ public enum WorkspaceOverview {
             let name = names[number] ?? String(number)
             return Workspace(name: name, isFocused: name == focused, windows: windows[number] ?? [])
         }
+    }
+}
+
+extension WorkspaceOverview {
+    private struct FocusEvent: Decodable {
+        var workspace: String
+    }
+
+    /// The workspace that a line from `subscribeToFocusCommand` says is now focused.
+    public static func focusedWorkspace(inEvent line: String) -> String? {
+        try? JSONDecoder().decode(FocusEvent.self, from: Data(line.utf8)).workspace
+    }
+
+    /// `workspaces` as `parse` would have given them had `focused` been the focused workspace:
+    /// an empty workspace is there only while it is focused.
+    public static func refocus(_ workspaces: [Workspace], on focused: String) -> [Workspace] {
+        guard !workspaces.isEmpty else { return [] }
+        var result = workspaces
+            .filter { !$0.windows.isEmpty || $0.name == focused }
+            .map { Workspace(name: $0.name, isFocused: $0.name == focused, windows: $0.windows) }
+        if let number = Int(focused), !result.contains(where: \.isFocused) {
+            let index = result.firstIndex { Int($0.name).map { $0 > number } ?? false } ?? result.endIndex
+            result.insert(Workspace(name: focused, isFocused: true, windows: []), at: index)
+        }
+        return result
     }
 }
 

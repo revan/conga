@@ -35,10 +35,12 @@ final class WorkspaceOverlayWindow {
 
     /// `selected` names the workspace to outline, if any.
     func show(progress: Double, selected: String?) {
+        // Changes to the outline animate only once the overlay is up; it appears in place.
+        let wasShown = self.progress > 0 && panel.isVisible
         self.progress = min(max(progress, 0), 1)
         generation += 1
         refresh()
-        select(selected, animated: true)
+        select(selected, animated: wasShown)
     }
 
     /// Replaces what the overlay shows, including while it is on screen.
@@ -51,6 +53,8 @@ final class WorkspaceOverlayWindow {
 
     func hide() {
         progress = 0
+        // Forget it, so the next swipe up does not briefly outline where this one ended.
+        selected = nil
         guard panel.isVisible else { return }
         generation += 1
         let generation = generation
@@ -82,7 +86,7 @@ final class WorkspaceOverlayWindow {
     }
 
     /// Puts the outline around the selected workspace's square, sliding it there if it was
-    /// already around another.
+    /// already around another, or fading it in there if it was around none.
     private func select(_ name: String?, animated: Bool) {
         let frame = name.flatMap { squareFrames[$0] }
         let wasHidden = outline.isHidden
@@ -93,14 +97,20 @@ final class WorkspaceOverlayWindow {
 
         // Resolved here rather than once, so it follows the accent colour and appearance.
         outline.layer?.borderColor = NSColor.controlAccentColor.cgColor
-        if animated && !wasHidden && panel.isVisible {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = Self.outlineMoveDuration
-                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                outline.animator().frame = frame
-            }
-        } else {
+        guard animated && panel.isVisible else {
             outline.frame = frame
+            outline.alphaValue = 1
+            return
+        }
+        if wasHidden {
+            outline.frame = frame
+            outline.alphaValue = 0
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Self.outlineMoveDuration
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            outline.animator().frame = frame
+            outline.animator().alphaValue = 1
         }
     }
 

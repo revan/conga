@@ -37,7 +37,8 @@ CI (`.github/workflows/test.yml`) runs `scripts/test.sh` on a `macos-26` runner 
   - `GestureDispatcher` — one recognizer per trackpad; runs commands, emits indicator updates.
   - `IndicatorModel` — progress → opacity and arrow offset.
   - `Settings`, `SettingsStore` — values, clamping, `UserDefaults` persistence.
-  - `ShellCommandRunner` — `/bin/sh -c`, fire and forget, or `output(of:)` to read stdout.
+  - `ShellCommandRunner` — `/bin/sh -c`, fire and forget, `output(of:)` to read stdout, or
+    `lines(of:)` to follow it line by line.
   - `WorkspaceOverview` — `aerospace` JSON → workspaces and their windows, the overlay's
     geometry, and `WorkspaceSeeker`, which turns sideways travel into a selected workspace.
 - `Sources/Conga` — the AppKit/SwiftUI shell: status item, settings window, the two HUD panels
@@ -98,6 +99,12 @@ New behaviour goes in `CongaCore` with tests; the app target should only wire th
   focused one. If `aerospace` fails the overlay does not appear. `GestureDispatcher.workspaces`
   holds the same list for seeking, so until a swipe's refresh arrives, a few tens of
   milliseconds in, it selects from the previous swipe's list.
+- **Focus is followed between swipes.** So that a swipe up never opens on a workspace that was
+  focused before something else switched, the app keeps `aerospace subscribe
+  focused-workspace-changed` running and moves the focus in the cached list as events arrive.
+  `subscribe` needs AeroSpace 0.21; when it fails or exits, the app retries with a growing
+  delay, and meanwhile a swipe up empties the cached list, so no outline appears until the
+  refresh says which workspace is focused, and then it fades in.
 - **Previews need Screen Recording permission.** They come from ScreenCaptureKit
   (`CGWindowListCreateImage` is obsolete in the macOS 15 SDK). Without the permission, or for
   any window that fails to capture, the tile shows the window's title instead. The app asks at

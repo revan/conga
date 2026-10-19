@@ -61,6 +61,28 @@ private func json(_ windows: [(id: Int, app: String, title: String, workspace: S
         ])
     }
 
+    @Test func readsTheFocusedWorkspaceFromASubscriptionEvent() {
+        let line = #"{"_event":"focused-workspace-changed","prevWorkspace":"1","workspace":"3"}"#
+        #expect(WorkspaceOverview.focusedWorkspace(inEvent: line) == "3")
+        #expect(WorkspaceOverview.focusedWorkspace(inEvent: #"{"_event":"mode-changed","mode":"main"}"#) == nil)
+        #expect(WorkspaceOverview.focusedWorkspace(inEvent: "not json") == nil)
+    }
+
+    @Test func refocusMovesTheFocus() {
+        let window = WorkspaceWindow(id: 1, appName: "A", title: "a")
+        let workspaces = ["1", "2"].map { Workspace(name: $0, isFocused: $0 == "1", windows: [window]) }
+        #expect(WorkspaceOverview.refocus(workspaces, on: "2").map(\.isFocused) == [false, true])
+    }
+
+    @Test func refocusAddsAndDropsEmptyWorkspacesAsParseWould() {
+        let data = json([(1, "A", "a", "2"), (2, "B", "b", "5")])
+        for (from, to) in [("3", "7"), ("3", "1"), ("2", "3"), ("3", "5"), ("3", "beeper"), ("beeper", "4")] {
+            let refocused = WorkspaceOverview.refocus(WorkspaceOverview.parse(windowsJSON: data, focusedWorkspace: from), on: to)
+            #expect(refocused == WorkspaceOverview.parse(windowsJSON: data, focusedWorkspace: to), "\(from) → \(to)")
+        }
+        #expect(WorkspaceOverview.refocus([], on: "1") == [])
+    }
+
     @Test func unexpectedOutputGivesNoWorkspaces() {
         #expect(WorkspaceOverview.parse(windowsJSON: Data("not json".utf8), focusedWorkspace: "1").isEmpty)
         #expect(WorkspaceOverview.parse(windowsJSON: Data("[]".utf8), focusedWorkspace: "1").isEmpty)

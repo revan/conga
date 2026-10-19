@@ -22,7 +22,7 @@ public struct ShellCommandRunner: CommandRunning, Sendable {
     /// Stdin is a pseudo-terminal, as it would be for a command typed into a terminal. Some
     /// tools (AeroSpace 0.20+ among them) refuse to run when stdin is a file or pipe.
     public func run(_ command: String, completion: (@Sendable (Int32) -> Void)?) {
-        if !start(command, standardOutput: FileHandle.nullDevice, completion: completion) {
+        if start(command, standardOutput: FileHandle.nullDevice, completion: completion) == nil {
             completion?(-1)
         }
     }
@@ -38,7 +38,7 @@ public struct ShellCommandRunner: CommandRunning, Sendable {
             result.withLock { $0.status = status }
             group.leave()
         }
-        guard started else {
+        guard started != nil else {
             completion(nil)
             return
         }
@@ -60,9 +60,37 @@ public struct ShellCommandRunner: CommandRunning, Sendable {
         }
     }
 
-    /// Launches the shell and returns whether it started. `completion` receives the exit
-    /// status, and is not called if the launch failed.
-    private func start(_ command: String, standardOutput: Any, completion: (@Sendable (Int32) -> Void)?) -> Bool {
+    /// Runs `command` and passes each line it writes to stdout to `onLine` as soon as the line
+    /// is complete, on a background queue. `completion` receives the exit status, or -1 if
+    /// the shell could not be launched, in which case nil is returned.
+    @discardableResult
+    public func lines(
+        of command: String,
+        onLine: @escaping @Sendable (String) -> Void,
+        completion: @escaping @Sendable (Int32) -> Void
+    ) -> RunningCommand? {
+        let pipe = Pipe()
+        let splitter = OSAllocatedUnfairLock(initialState: LineSplitter())
+        pipe.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if data.isEmpty {
+                handle.readabilityHandler = nil
+            }
+            for line in splitter.withLock({ $0.append(data) }) {
+                onLine(line)
+            }
+        }
+        guard let process = start(command, standardOutput: pipe, completion: completion) else {
+            pipe.fileHandleForReading.readabilityHandler = nil
+            completion(-1)
+            return nil
+        }
+        return RunningCommand(process: process)
+    }
+
+    /// Launches the shell and returns its process, or nil if it did not start. `completion`
+    /// receives the exit status, and is not called if the launch failed.
+    private func start(_ command: String, standardOutput: Any, completion: (@Sendable (Int32) -> Void)?) -> Process? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/sh")
         process.arguments = ["-c", command]
@@ -88,10 +116,10 @@ public struct ShellCommandRunner: CommandRunning, Sendable {
         }
         do {
             try process.run()
-            return true
+            return process
         } catch {
             try? terminal?.close()
-            return false
+            return nil
         }
     }
 
@@ -130,5 +158,39 @@ public struct ShellCommandRunner: CommandRunning, Sendable {
         let lines = String(decoding: data, as: UTF8.self).split(whereSeparator: \.isNewline)
         guard let path = lines.last, path.contains("/") else { return nil }
         return String(path)
+    }
+}
+
+/// A command started by `ShellCommandRunner.lines(of:onLine:completion:)`.
+public final class RunningCommand: @unchecked Sendable {
+    private let process: Process
+
+    init(process: Process) {
+        self.process = process
+    }
+
+    public func terminate() {
+        process.terminate()
+    }
+}
+
+/// Cuts a byte stream into lines. A line is not complete until its newline arrives; an empty
+/// chunk marks the end of the stream and completes whatever is left.
+struct LineSplitter {
+    private var pending = Data()
+
+    mutating func append(_ data: Data) -> [String] {
+        if data.isEmpty {
+            defer { pending = Data() }
+            return pending.isEmpty ? [] : [String(decoding: pending, as: UTF8.self)]
+        }
+        pending.append(data)
+        var lines: [String] = []
+        while let newline = pending.firstIndex(of: UInt8(ascii: "\n")) {
+            let line = pending[pending.startIndex..<newline]
+            lines.append(String(decoding: line, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
+            pending = Data(pending[pending.index(after: newline)...])
+        }
+        return lines
     }
 }

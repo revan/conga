@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 
 @testable import CongaCore
@@ -225,6 +226,46 @@ private final class RecordingRunner: CommandRunning {
     @Test func outputCommandHasATerminalForStdin() async {
         let output = await ShellCommandRunner(environment: [:]).output(of: "test -t 0 && echo yes")
         #expect(output == Data("yes\n".utf8))
+    }
+
+    @Test func linesArriveOneByOne() async {
+        let lines = OSAllocatedUnfairLock<[String]>(initialState: [])
+        let status = await withCheckedContinuation { continuation in
+            ShellCommandRunner(environment: [:]).lines(of: "echo one; printf 'two\\nthree'") { line in
+                lines.withLock { $0.append(line) }
+            } completion: { continuation.resume(returning: $0) }
+        }
+        #expect(status == 0)
+        // The last line has no newline; it is complete when the output ends, which may be
+        // after the command exits.
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(lines.withLock { $0 } == ["one", "two", "three"])
+    }
+
+    @Test func linesArriveWhileTheCommandRunsAndItCanBeStopped() async {
+        let (lines, linesContinuation) = AsyncStream.makeStream(of: String.self)
+        let (exit, exitContinuation) = AsyncStream.makeStream(of: Int32.self)
+        let command = ShellCommandRunner(environment: [:]).lines(of: "echo ready; exec sleep 10") {
+            linesContinuation.yield($0)
+        } completion: {
+            exitContinuation.yield($0)
+        }
+        var iterator = lines.makeAsyncIterator()
+        #expect(await iterator.next() == "ready")
+        command?.terminate()
+        var exits = exit.makeAsyncIterator()
+        let status = await exits.next()
+        #expect(status != nil && status != 0)
+    }
+
+    @Test func lineSplitterWaitsForTheNewline() {
+        var splitter = LineSplitter()
+        #expect(splitter.append(Data("{\"a\":".utf8)) == [])
+        #expect(splitter.append(Data("1}\r\n{\"b\"".utf8)) == ["{\"a\":1}"])
+        #expect(splitter.append(Data(":2}\n\n".utf8)) == ["{\"b\":2}", ""])
+        #expect(splitter.append(Data("tail".utf8)) == [])
+        #expect(splitter.append(Data()) == ["tail"])
+        #expect(splitter.append(Data()) == [])
     }
 
     @Test func loginShellEnvironmentHasUsablePath() {

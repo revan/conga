@@ -13,6 +13,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Bumped on every refresh so the results of an older one are dropped.
     private var refreshGeneration = 0
     private var previews: [Int: CGImage] = [:]
+    /// The focused workspace as AeroSpace last reported it through `subscribe`, or nil while
+    /// no subscription is running.
+    private var liveFocus: String?
+    private var focusSubscription: RunningCommand?
+    /// How long to wait before subscribing again after a subscription ends.
+    private var resubscribeDelay = AppDelegate.minimumResubscribeDelay
+    private static let minimumResubscribeDelay: Duration = .seconds(5)
+    private static let maximumResubscribeDelay: Duration = .seconds(300)
     /// The progress `--preview-workspaces` asked to hold the overlay at.
     private var previewProgress: Double?
     private var model: SettingsModel!
@@ -45,6 +53,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installEditMenu()
         previewIndicatorIfRequested()
         previewWorkspacesIfRequested()
+        subscribeToFocus()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        focusSubscription?.terminate()
     }
 
     private func apply(_ update: IndicatorUpdate) {
@@ -54,6 +67,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .showWorkspaces(let progress, let selected):
             if !isPeeking {
                 isPeeking = true
+                if liveFocus == nil {
+                    // The list may say the wrong workspace is focused. Outline nothing until the
+                    // refresh says which one is.
+                    dispatcher.workspaces = []
+                }
                 refreshWorkspaces()
             }
             overlay.show(progress: progress, selected: selected)
@@ -74,11 +92,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             async let windows = shell.output(of: WorkspaceOverview.listWindowsCommand)
             async let focused = shell.output(of: WorkspaceOverview.focusedWorkspaceCommand)
             guard let windowsJSON = await windows else { return }
-            let workspaces = WorkspaceOverview.parse(
+            var workspaces = WorkspaceOverview.parse(
                 windowsJSON: windowsJSON,
                 focusedWorkspace: String(decoding: await focused ?? Data(), as: UTF8.self)
             )
             guard generation == refreshGeneration else { return }
+            if let liveFocus {
+                // Newer than the answer to the query if the focus changed while it ran.
+                workspaces = WorkspaceOverview.refocus(workspaces, on: liveFocus)
+            }
             dispatcher.workspaces = workspaces
             overlay.update(workspaces: workspaces, previews: previews)
             if let previewProgress {
@@ -91,6 +113,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard generation == refreshGeneration else { return }
             previews = captured
             overlay.update(workspaces: workspaces, previews: captured)
+        }
+    }
+
+    /// Follows AeroSpace's focused workspace, so that the next swipe up starts on the right
+    /// one instead of where the last swipe left it. If AeroSpace is too old to subscribe, or is
+    /// not running, tries again later, less and less often.
+    private func subscribeToFocus() {
+        focusSubscription = shell.lines(of: WorkspaceOverview.subscribeToFocusCommand) { [weak self] line in
+            guard let focused = WorkspaceOverview.focusedWorkspace(inEvent: line) else { return }
+            Task { @MainActor in self?.focusChanged(to: focused) }
+        } completion: { [weak self] _ in
+            Task { @MainActor in self?.subscriptionEnded() }
+        }
+    }
+
+    private func focusChanged(to focused: String) {
+        liveFocus = focused
+        resubscribeDelay = Self.minimumResubscribeDelay
+        let workspaces = WorkspaceOverview.refocus(dispatcher.workspaces, on: focused)
+        guard workspaces != dispatcher.workspaces else { return }
+        dispatcher.workspaces = workspaces
+        overlay.update(workspaces: workspaces, previews: previews)
+    }
+
+    private func subscriptionEnded() {
+        liveFocus = nil
+        focusSubscription = nil
+        let delay = resubscribeDelay
+        resubscribeDelay = min(delay * 2, Self.maximumResubscribeDelay)
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: delay)
+            self?.subscribeToFocus()
         }
     }
 
