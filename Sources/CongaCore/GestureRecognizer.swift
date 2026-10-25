@@ -108,11 +108,11 @@ public struct GestureRecognizer: Sendable {
                     fingers: Set(touches.map(\.id)), startX: startX, startY: startY,
                     lock: .seeking(originX: originX + x - lastX, lastX: x, lastY: y, isUp: isUp), travel: lastTravel
                 )
-                return .peek(fraction: fraction(of: lastTravel, thresholds: thresholds), offset: lastX - originX)
+                return .peek(fraction: seekingFraction(of: lastTravel, isUp: isUp, thresholds: thresholds), offset: lastX - originX)
             }
             if touches.count < fingers.count {
                 state = count == 0 ? .idle : .ended
-                if case .seeking = lock, fraction(of: lastTravel, thresholds: thresholds) > 0 {
+                if case .seeking(_, _, _, let isUp) = lock, seekingFraction(of: lastTravel, isUp: isUp, thresholds: thresholds) > 0 {
                     return .peekReleased
                 }
                 return .cancelled
@@ -150,7 +150,7 @@ public struct GestureRecognizer: Sendable {
                     fingers: fingers, startX: startX, startY: startY,
                     lock: .seeking(originX: originX, lastX: x, lastY: y, isUp: isUp), travel: travel
                 )
-                return .peek(fraction: fraction(of: travel, thresholds: thresholds), offset: x - originX)
+                return .peek(fraction: seekingFraction(of: travel, isUp: isUp, thresholds: thresholds), offset: x - originX)
             }
 
             let lockedSign: Double? = if case .sideways(let sign) = lock { sign } else { nil }
@@ -189,6 +189,12 @@ public struct GestureRecognizer: Sendable {
     /// How far up a swipe up is, from 0 at the lower bound to 1 at the trigger.
     private func fraction(of travel: Double, thresholds: GestureThresholds) -> Double {
         fraction(of: travel, lowerBound: thresholds.lowerBound, trigger: thresholds.trigger)
+    }
+
+    /// How shown the overlay is while seeking: a swipe up fades with its travel, a sideways
+    /// swipe only seeks once past its trigger and stays fully shown.
+    private func seekingFraction(of travel: Double, isUp: Bool, thresholds: GestureThresholds) -> Double {
+        isUp ? fraction(of: travel, thresholds: thresholds) : 1
     }
 
     private func fraction(of travel: Double, lowerBound: Double, trigger: Double) -> Double {

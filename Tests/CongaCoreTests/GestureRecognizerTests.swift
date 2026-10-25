@@ -360,6 +360,11 @@ private func isPeek(_ event: GestureEvent, _ fraction: Double, offset expected: 
         #expect(isPeek(sideways[0], 0.5, offset: 0))
         #expect(isPeek(sideways[1], 1, offset: 0.05))
         #expect(sideways.last == .peekReleased)
+        let seeking = events([frame(4), frame(4, x: 0.65), frame(4, x: 0.7), frame(4, x: 0.6), frame(0)], thresholds: custom)
+        #expect(seeking.count == 4)
+        #expect(isPeek(seeking[1], 1, offset: 0.1))
+        #expect(isPeek(seeking[2], 1, offset: 0))
+        #expect(seeking.last == .peekReleased)
         let up = events([frame(4), frame(4, y: 0.625)], thresholds: custom)
         #expect(up.count == 1 && isPeek(up[0], 0.5, offset: 0))
     }
