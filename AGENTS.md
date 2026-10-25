@@ -2,7 +2,7 @@
 
 A macOS menu bar app for switching AeroSpace workspaces with a four-finger trackpad swipe.
 Swiping four fingers sideways or up fades in a glass row of squares, one per numbered AeroSpace
-workspace that has windows, each showing the workspace number under previews of its windows.
+workspace that has windows, each showing previews of its windows with the workspace number over them.
 The focused workspace is outlined; moving the fingers sideways moves the outline along the row,
 and lifting switches to the outlined workspace. A sideways swipe released before the row is
 fully shown, or swiped back, cancels.

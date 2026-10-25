@@ -149,18 +149,11 @@ final class WorkspaceOverlayWindow {
         )
     }
 
-    /// The workspace's number with its windows tiled over it.
+    /// The workspace's windows tiled, with its number drawn over them.
     private func makeContent(for workspace: Workspace, size: CGFloat) -> NSView {
         let bounds = NSRect(x: 0, y: 0, width: size, height: size)
         let scale = size / HUDStyle.size
         let content = NSView(frame: bounds)
-
-        let number = NSTextField(labelWithString: workspace.name)
-        number.font = .systemFont(ofSize: 84 * scale, weight: .medium)
-        number.textColor = workspace.isFocused ? .labelColor : .secondaryLabelColor
-        number.sizeToFit()
-        number.setFrameOrigin(NSPoint(x: bounds.midX - number.frame.width / 2, y: bounds.midY - number.frame.height / 2))
-        content.addSubview(number)
 
         let cells = WorkspaceOverviewLayout.thumbnailFrames(
             count: workspace.windows.count,
@@ -170,6 +163,22 @@ final class WorkspaceOverlayWindow {
         for (window, cell) in zip(workspace.windows, cells) {
             content.addSubview(makeTile(for: window, in: cell))
         }
+
+        let number = NSTextField(labelWithString: workspace.name)
+        number.font = .systemFont(ofSize: 84 * scale, weight: .medium)
+        number.sizeToFit()
+        number.setFrameOrigin(NSPoint(x: bounds.midX - number.frame.width / 2, y: bounds.midY - number.frame.height / 2))
+        if workspace.windows.isEmpty {
+            number.textColor = workspace.isFocused ? .labelColor : .secondaryLabelColor
+        } else {
+            // White with a shadow stays readable over light and dark previews alike.
+            number.textColor = .white.withAlphaComponent(workspace.isFocused ? 1 : 0.75)
+            let shadow = NSShadow()
+            shadow.shadowColor = .black.withAlphaComponent(0.6)
+            shadow.shadowBlurRadius = 6 * scale
+            number.shadow = shadow
+        }
+        content.addSubview(number)
         return content
     }
 
