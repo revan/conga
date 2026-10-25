@@ -24,64 +24,37 @@ private final class RecordingRunner: CommandRunning {
         var values: [IndicatorUpdate] = []
     }
 
-    @Test func fingersMovingLeftSwipeRight() {
-        let (dispatcher, runner, updates) = makeDispatcher()
-        for f in [frame(4), frame(4, x: 0.2), frame(0)] { dispatcher.handle(f) }
-        #expect(runner.commands == ["aerospace workspace --wrap-around next"])
-        #expect(updates() == [.show(.right, progress: 1), .hide(fired: true)])
-    }
-
-    @Test func fingersMovingRightSwipeLeft() {
-        let (dispatcher, runner, updates) = makeDispatcher()
-        for f in [frame(4), frame(4, x: 0.8), frame(0)] { dispatcher.handle(f) }
-        #expect(runner.commands == ["aerospace workspace --wrap-around prev"])
-        #expect(updates() == [.show(.left, progress: 1), .hide(fired: true)])
-    }
-
-    @Test func withoutNaturalScrollSwipeFollowsFingers() {
-        var settings = Settings()
-        settings.naturalScroll = false
-        let (dispatcher, runner, updates) = makeDispatcher(settings)
-        for f in [frame(4), frame(4, x: 0.8), frame(0)] { dispatcher.handle(f) }
-        for f in [frame(4), frame(4, x: 0.2), frame(0)] { dispatcher.handle(f) }
-        #expect(runner.commands == ["aerospace workspace --wrap-around next", "aerospace workspace --wrap-around prev"])
-        #expect(updates() == [
-            .show(.right, progress: 1), .hide(fired: true),
-            .show(.left, progress: 1), .hide(fired: true),
-        ])
-    }
-
-    @Test func reversedSwipeRunsNothing() {
-        let (dispatcher, runner, updates) = makeDispatcher()
-        for f in [frame(4), frame(4, x: 0.8), frame(4, x: 0.5), frame(0)] { dispatcher.handle(f) }
-        #expect(runner.commands.isEmpty)
-        #expect(updates() == [.show(.left, progress: 1), .show(.left, progress: 0), .hide(fired: false)])
-    }
-
-    @Test func customCommandsAndThresholdsApplyLive() {
-        let (dispatcher, runner, _) = makeDispatcher()
-        var settings = Settings()
-        settings.leftCommand = "echo hi"
-        settings.triggerFraction = 0.5
-        dispatcher.settings = settings
-
-        for f in [frame(4), frame(4, x: 0.8), frame(0)] { dispatcher.handle(f) }
-        #expect(runner.commands.isEmpty)
-        for f in [frame(4, x: 0.2), frame(4, x: 0.8), frame(0)] { dispatcher.handle(f) }
-        #expect(runner.commands == ["echo hi"])
-    }
-
-    @Test func blankCommandIsNotRun() {
-        var settings = Settings()
-        settings.leftCommand = "  "
-        let (dispatcher, runner, updates) = makeDispatcher(settings)
-        for f in [frame(4), frame(4, x: 0.8), frame(0)] { dispatcher.handle(f) }
-        #expect(runner.commands.isEmpty)
-        #expect(updates().last == .hide(fired: true))
-    }
-
     private static let workspaces = ["1", "2", "3", "4"].map {
         Workspace(name: $0, isFocused: $0 == "2", windows: [])
+    }
+
+    @Test func sidewaysSwipeOpensTheOverlayAndSeeksAlongIt() {
+        let (dispatcher, runner, updates) = makeDispatcher()
+        dispatcher.workspaces = Self.workspaces
+        for f in [frame(4), frame(4, x: 0.6), frame(4, x: 0.7), frame(4, x: 0.81), frame(0)] { dispatcher.handle(f) }
+        #expect(updates().map { if case .showWorkspaces(_, let selected) = $0 { selected } else { nil } } == [
+            "2", "2", "3", nil,
+        ])
+        #expect(updates().last == .hide)
+        #expect(runner.commands == ["aerospace workspace 3"])
+    }
+
+    @Test func sidewaysSwipeReleasedBeforeTheOverlayIsFullyShownRunsNothing() {
+        let (dispatcher, runner, updates) = makeDispatcher()
+        dispatcher.workspaces = Self.workspaces
+        for f in [frame(4), frame(4, x: 0.4), frame(0)] { dispatcher.handle(f) }
+        #expect(runner.commands.isEmpty)
+        #expect(updates().count == 2 && updates().last == .hide)
+    }
+
+    @Test func naturalScrollReversesSeeking() {
+        var settings = Settings()
+        settings.naturalScroll = true
+        let (dispatcher, runner, _) = makeDispatcher(settings)
+        dispatcher.workspaces = Self.workspaces
+        for f in [frame(4), frame(4, x: 0.19), frame(0)] { dispatcher.handle(f) }
+        for f in [frame(4), frame(4, y: 0.9), frame(4, x: 0.61, y: 0.9), frame(0)] { dispatcher.handle(f) }
+        #expect(runner.commands == ["aerospace workspace 3", "aerospace workspace 1"])
     }
 
     @Test func swipeUpSelectsFocusedWorkspaceAndReleasingRunsNothing() {
@@ -90,7 +63,7 @@ private final class RecordingRunner: CommandRunning {
         for f in [frame(4), frame(4, y: 0.52), frame(4, y: 0.9), frame(0)] { dispatcher.handle(f) }
         #expect(runner.commands.isEmpty)
         #expect(updates() == [
-            .show(.left, progress: 0), .showWorkspaces(progress: 1, selected: "2"), .hide(fired: true),
+            .showWorkspaces(progress: 1, selected: "2"), .hide,
         ])
     }
 
@@ -102,7 +75,7 @@ private final class RecordingRunner: CommandRunning {
         }
         #expect(updates() == [
             .showWorkspaces(progress: 1, selected: "2"), .showWorkspaces(progress: 1, selected: "3"),
-            .showWorkspaces(progress: 1, selected: "4"), .hide(fired: true),
+            .showWorkspaces(progress: 1, selected: "4"), .hide,
         ])
         #expect(runner.commands == ["aerospace workspace 4"])
     }
@@ -128,15 +101,6 @@ private final class RecordingRunner: CommandRunning {
         #expect(switched(acceleration: 3) != ["aerospace workspace 2"])
     }
 
-    @Test func seekingIgnoresNaturalScroll() {
-        var settings = Settings()
-        settings.naturalScroll = false
-        let (dispatcher, runner, _) = makeDispatcher(settings)
-        dispatcher.workspaces = Self.workspaces
-        for f in [frame(4), frame(4, y: 0.9), frame(4, x: 0.39, y: 0.9), frame(0)] { dispatcher.handle(f) }
-        #expect(runner.commands == ["aerospace workspace 1"])
-    }
-
     @Test func swipingBackDownAfterSeekingSwitchesNothing() {
         let (dispatcher, runner, updates) = makeDispatcher()
         dispatcher.workspaces = Self.workspaces
@@ -144,7 +108,7 @@ private final class RecordingRunner: CommandRunning {
             dispatcher.handle(f)
         }
         #expect(runner.commands.isEmpty)
-        #expect(updates().last == .hide(fired: false))
+        #expect(updates().last == .hide)
     }
 
     @Test func releaseUsesWorkspacesAsTheyAreNow() {
@@ -163,7 +127,7 @@ private final class RecordingRunner: CommandRunning {
         for f in [frame(4), frame(4, y: 0.9), frame(4, x: 0.61, y: 0.9), frame(0)] { dispatcher.handle(f) }
         for f in [frame(4), frame(4, y: 0.9), frame(0)] { dispatcher.handle(f) }
         #expect(runner.commands == ["aerospace workspace 3"])
-        #expect(updates().suffix(2) == [.showWorkspaces(progress: 1, selected: "2"), .hide(fired: true)])
+        #expect(updates().suffix(2) == [.showWorkspaces(progress: 1, selected: "2"), .hide])
     }
 
     @Test func swipeUpWithNoWorkspacesSelectsNothing() {
@@ -189,17 +153,18 @@ private final class RecordingRunner: CommandRunning {
         dispatcher.settings.isEnabled = false
         dispatcher.handle(frame(0))
         #expect(runner.commands.isEmpty)
-        #expect(updates().last == .hide(fired: false))
+        #expect(updates().last == .hide)
     }
 
     @Test func trackpadsAreTrackedIndependently() {
         let (dispatcher, runner, _) = makeDispatcher()
+        dispatcher.workspaces = Self.workspaces
         dispatcher.handle(frame(4), device: 1)
         dispatcher.handle(frame(2), device: 2)
         dispatcher.handle(frame(4, x: 0.8), device: 1)
         dispatcher.handle(frame(0), device: 2)
         dispatcher.handle(frame(0), device: 1)
-        #expect(runner.commands == ["aerospace workspace --wrap-around prev"])
+        #expect(runner.commands == ["aerospace workspace 3"])
     }
 }
 

@@ -11,7 +11,7 @@ import os
 /// drawing the overlay at the same time.
 ///
 /// An event tap that drops events needs Accessibility permission. Without it the tap cannot be
-/// created, nothing is blocked, and creating it is tried again on the next swipe up.
+/// created, nothing is blocked, and creating it is tried again the next time the overlay opens.
 final class ScrollBlocker: Sendable {
     private struct State {
         var filter = ScrollFilter()

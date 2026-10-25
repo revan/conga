@@ -5,11 +5,10 @@ import CongaCore
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let store = SettingsStore()
     private let monitor = MultitouchMonitor()
-    private let indicator = IndicatorWindow()
     private let overlay = WorkspaceOverlayWindow()
     private let scrollBlocker = ScrollBlocker()
     private let shell = ShellCommandRunner(environment: ShellCommandRunner.loginShellEnvironment())
-    /// True from the first frame of a swipe up until the indicator is next hidden.
+    /// True from the first frame the overlay shows until the indicator is next hidden.
     private var isPeeking = false
     /// Bumped on every refresh so the results of an older one are dropped.
     private var refreshGeneration = 0
@@ -54,7 +53,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         installStatusItem(foundTrackpad: foundTrackpad)
         installEditMenu()
-        previewIndicatorIfRequested()
         previewWorkspacesIfRequested()
         subscribeToFocus()
     }
@@ -65,8 +63,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func apply(_ update: IndicatorUpdate) {
         switch update {
-        case .show(let direction, let progress):
-            indicator.show(direction, progress: progress)
         case .showWorkspaces(let progress, let selected):
             if !isPeeking {
                 isPeeking = true
@@ -79,16 +75,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 refreshWorkspaces()
             }
             overlay.show(progress: progress, selected: selected)
-        case .hide(let fired):
+        case .hide:
             isPeeking = false
             scrollBlocker.isBlocking = false
-            indicator.hide(fired: fired)
             overlay.hide()
         }
     }
 
     /// Asks AeroSpace what is where and shows that with the previews already in hand, then
-    /// captures new previews. The overlay keeps the last result, so the next swipe up has
+    /// captures new previews. The overlay keeps the last result, so the next gesture has
     /// something to show at once.
     private func refreshWorkspaces() {
         refreshGeneration += 1
@@ -121,7 +116,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Follows AeroSpace's focused workspace, so that the next swipe up starts on the right
+    /// Follows AeroSpace's focused workspace, so that the next gesture starts on the right
     /// one instead of where the last swipe left it. If AeroSpace is too old to subscribe, or is
     /// not running, tries again later, less and less often.
     private func subscribeToFocus() {
@@ -172,18 +167,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.mainMenu = mainMenu
     }
 
-    /// `--preview-indicator 0.6` holds the indicator at that progress, for checking its
-    /// appearance without a hand on the trackpad. A negative value previews a left swipe.
-    private func previewIndicatorIfRequested() {
-        let arguments = CommandLine.arguments
-        guard let flag = arguments.firstIndex(of: "--preview-indicator"),
-              arguments.indices.contains(flag + 1),
-              let progress = Double(arguments[flag + 1])
-        else { return }
-        apply(.show(progress < 0 ? .left : .right, progress: abs(progress)))
-    }
-
-    /// `--preview-workspaces 1` does the same for the workspace overlay.
+    /// `--preview-workspaces 1` holds the workspace overlay at that progress, for checking its
+    /// appearance without a hand on the trackpad.
     private func previewWorkspacesIfRequested() {
         let arguments = CommandLine.arguments
         guard let flag = arguments.firstIndex(of: "--preview-workspaces"),

@@ -1,9 +1,9 @@
 import AppKit
 
-/// What the arrow box and the workspace overlay have in common.
+/// The look of the workspace overlay.
 @MainActor
 enum HUDStyle {
-    /// Side of the arrow box, and of a workspace square when there is room.
+    /// Side of a workspace square when there is room.
     static let size: CGFloat = 200
     /// Corner radius of a box of that size; smaller boxes scale it down.
     static let cornerRadius: CGFloat = 28

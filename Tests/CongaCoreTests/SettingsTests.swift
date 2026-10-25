@@ -16,9 +16,7 @@ import Testing
         withStore { store in
             let settings = store.load()
             #expect(settings.isEnabled)
-            #expect(settings.naturalScroll)
-            #expect(settings.leftCommand == "aerospace workspace --wrap-around prev")
-            #expect(settings.rightCommand == "aerospace workspace --wrap-around next")
+            #expect(!settings.naturalScroll)
             #expect(settings.triggerFraction == 0.20)
             #expect(settings.indicatorStartFraction == 0.05)
             #expect(settings.workspaceAcceleration == 1.5)
@@ -29,30 +27,13 @@ import Testing
         withStore { store in
             var settings = Settings()
             settings.isEnabled = false
-            settings.naturalScroll = false
-            settings.leftCommand = "echo left"
-            settings.rightCommand = "echo right"
+            settings.naturalScroll = true
             settings.triggerFraction = 0.4
             settings.indicatorStartFraction = 0.1
             settings.workspaceAcceleration = 3.5
             store.save(settings)
             #expect(store.load() == settings)
         }
-    }
-
-    @Test func commandForDirection() {
-        let settings = Settings()
-        #expect(settings.command(for: .left) == settings.leftCommand)
-        #expect(settings.command(for: .right) == settings.rightCommand)
-    }
-
-    @Test func naturalScrollReversesFingerDirection() {
-        var settings = Settings()
-        #expect(settings.swipeDirection(forFingers: .left) == .right)
-        #expect(settings.swipeDirection(forFingers: .right) == .left)
-        settings.naturalScroll = false
-        #expect(settings.swipeDirection(forFingers: .left) == .left)
-        #expect(settings.swipeDirection(forFingers: .right) == .right)
     }
 
     @Test func thresholdsMirrorFractions() {

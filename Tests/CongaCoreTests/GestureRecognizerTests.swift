@@ -29,84 +29,110 @@ private func events(_ frames: [TouchFrame], thresholds: GestureThresholds = thre
     return frames.compactMap { recognizer.handle($0, thresholds: thresholds) }
 }
 
-private func progress(_ event: GestureEvent?) -> Double? {
-    if case .progress(_, let fraction) = event { fraction } else { nil }
-}
-
 private func peek(_ event: GestureEvent?) -> Double? {
     if case .peek(let fraction, _) = event { fraction } else { nil }
 }
 
+private func offset(_ event: GestureEvent?) -> Double? {
+    if case .peek(_, let offset) = event { offset } else { nil }
+}
+
+/// True if `event` is a peek at `fraction` and, within rounding, `offset`.
+private func isPeek(_ event: GestureEvent, _ fraction: Double, offset expected: Double) -> Bool {
+    guard let actual = peek(event), let moved = offset(event) else { return false }
+    return abs(actual - fraction) < 1e-9 && abs(moved - expected) < 1e-9
+}
+
 @Suite struct GestureRecognizerTests {
-    @Test func firesRightWhenReleasedPastTrigger() {
-        let result = events([frame(4), frame(4, x: 0.6), frame(4, x: 0.75), frame(0)])
-        #expect(result.last == .fired(.right))
-    }
-
-    @Test func firesLeftWhenReleasedPastTrigger() {
-        let result = events([frame(4), frame(4, x: 0.25), frame(0)])
-        #expect(result.last == .fired(.left))
-    }
-
-    @Test func cancelsWhenReleasedBelowTrigger() {
-        let result = events([frame(4), frame(4, x: 0.65), frame(0)])
-        #expect(result.last == .cancelled)
-        #expect(!result.contains(.fired(.right)))
-    }
-
-    @Test func progressIsZeroBelowLowerBound() {
-        let result = events([frame(4), frame(4, x: 0.53)])
-        #expect(result == [.progress(.right, fraction: 0)])
-    }
-
-    @Test func progressScalesLinearlyBetweenBounds() throws {
+    @Test func sidewaysSwipeFadesInBetweenLowerBoundAndTrigger() throws {
         let result = events([frame(4), frame(4, x: 0.625), frame(4, x: 0.70), frame(4, x: 0.95)])
-        let fractions = result.compactMap { progress($0) }
+        let fractions = result.compactMap { peek($0) }
         try #require(fractions.count == 3)
         #expect(abs(fractions[0] - 0.5) < 1e-9)
         #expect(abs(fractions[1] - 1) < 1e-9)
         #expect(fractions[2] == 1)
     }
 
-    @Test func reversingBeforeReleaseCancels() {
-        let result = events([frame(4), frame(4, x: 0.8), frame(4, x: 0.6), frame(4, x: 0.52), frame(0)])
-        #expect(result.first == .progress(.right, fraction: 1))
-        #expect(progress(result[1])! < 1)
-        #expect(result[2] == .progress(.right, fraction: 0))
+    @Test func sidewaysSwipeBelowLowerBoundShowsNothing() {
+        #expect(events([frame(4), frame(4, x: 0.53)]).isEmpty)
+    }
+
+    @Test func releasingPastTriggerIsAPeekRelease() {
+        let result = events([frame(4), frame(4, x: 0.6), frame(4, x: 0.75), frame(0)])
+        #expect(result.count == 3)
+        #expect(result.last == .peekReleased)
+    }
+
+    @Test func leftSwipePastTriggerIsAPeekRelease() {
+        #expect(events([frame(4), frame(4, x: 0.25), frame(0)]).last == .peekReleased)
+    }
+
+    @Test func releasingBelowTriggerCancels() {
+        let result = events([frame(4), frame(4, x: 0.65), frame(0)])
         #expect(result.last == .cancelled)
-        #expect(!result.contains(.fired(.right)))
+        #expect(!result.contains(.peekReleased))
+    }
+
+    @Test func sidewaysSeekingIsMeasuredFromTheTrigger() throws {
+        let result = events([frame(4), frame(4, x: 0.6), frame(4, x: 0.8), frame(4, x: 0.4), frame(0)])
+        try #require(result.count == 4)
+        #expect(isPeek(result[0], 1.0 / 3, offset: 0))
+        #expect(isPeek(result[1], 1, offset: 0.1))
+        // Swiping back once fully shown seeks back rather than fading out.
+        #expect(isPeek(result[2], 1, offset: -0.3))
+        #expect(result[3] == .peekReleased)
+    }
+
+    @Test func leftSwipeSeeksFromTheTrigger() {
+        let result = events([frame(4), frame(4, x: 0.2), frame(0)])
+        #expect(result.count == 2 && isPeek(result[0], 1, offset: -0.1))
+    }
+
+    @Test func reversingBeforeTriggerFadesOutAndCancels() {
+        let result = events([frame(4), frame(4, x: 0.65), frame(4, x: 0.6), frame(4, x: 0.52), frame(0)])
+        #expect(isPeek(result[0], 2.0 / 3, offset: 0))
+        #expect(peek(result[1])! < peek(result[0])!)
+        #expect(result[2] == .peek(fraction: 0, offset: 0))
+        #expect(result.last == .cancelled)
     }
 
     @Test func reversingThroughStartDoesNotSwitchDirection() {
-        let result = events([frame(4), frame(4, x: 0.8), frame(4, x: 0.2), frame(0)])
-        #expect(result == [.progress(.right, fraction: 1), .progress(.right, fraction: 0), .cancelled])
+        let result = events([frame(4), frame(4, x: 0.6), frame(4, x: 0.2), frame(0)])
+        #expect(result.count == 3)
+        #expect(result[1] == .peek(fraction: 0, offset: 0))
+        #expect(result.last == .cancelled)
     }
 
     @Test func swipingAgainAfterOvershootStartsFromTurnaroundPoint() throws {
-        let result = events([frame(4), frame(4, x: 0.8), frame(4, x: 0.2), frame(4, x: 0.3), frame(4, x: 0.45), frame(0)])
+        let result = events([frame(4), frame(4, x: 0.6), frame(4, x: 0.3), frame(4, x: 0.4), frame(4, x: 0.55), frame(0)])
         try #require(result.count == 5)
-        #expect(result[1] == .progress(.right, fraction: 0))
-        #expect(abs(progress(result[2])! - 1.0 / 3) < 1e-9)
-        #expect(result[3] == .progress(.right, fraction: 1))
-        #expect(result[4] == .fired(.right))
+        #expect(result[1] == .peek(fraction: 0, offset: 0))
+        #expect(isPeek(result[2], 1.0 / 3, offset: 0))
+        #expect(isPeek(result[3], 1, offset: 0.05))
+        #expect(result[4] == .peekReleased)
     }
 
     @Test func overshootDoesNotCountAsVerticalSwipe() {
         let result = events([
-            frame(4), frame(4, x: 0.8, y: 0.57), frame(4, x: 0.4, y: 0.57), frame(4, x: 0.65, y: 0.57), frame(0),
+            frame(4), frame(4, x: 0.6, y: 0.57), frame(4, x: 0.4, y: 0.57), frame(4, x: 0.65, y: 0.57), frame(0),
         ])
-        #expect(result.last == .fired(.right))
+        #expect(isPeek(result[2], 1, offset: 0.05))
+        #expect(result.last == .peekReleased)
     }
 
     @Test func directionIsNotFixedBeforeLowerBound() {
         let result = events([frame(4), frame(4, x: 0.52), frame(4, x: 0.2), frame(0)])
-        #expect(result == [.progress(.right, fraction: 0), .progress(.left, fraction: 1), .fired(.left)])
+        #expect(result.count == 2 && isPeek(result[0], 1, offset: -0.1))
+        #expect(result.last == .peekReleased)
     }
 
     @Test func oppositeDirectionWorksAfterLiftingAndTouchingAgain() {
-        let result = events([frame(4), frame(4, x: 0.8), frame(4, x: 0.2), frame(0), frame(4, x: 0.5), frame(4, x: 0.2), frame(0)])
-        #expect(result.last == .fired(.left))
+        let result = events([
+            frame(4), frame(4, x: 0.6), frame(4, x: 0.2), frame(0), frame(4, x: 0.5), frame(4, x: 0.2), frame(0),
+        ])
         #expect(result.filter { $0 == .cancelled }.count == 1)
+        #expect(isPeek(result[result.count - 2], 1, offset: -0.1))
+        #expect(result.last == .peekReleased)
     }
 
     @Test(arguments: [1, 2, 3, 5]) func otherFingerCountsNeverTrigger(count: Int) {
@@ -121,25 +147,28 @@ private func peek(_ event: GestureEvent?) -> Double? {
 
     @Test func extraTouchAfterDirectionIsFixedIsIgnored() {
         let result = events([frame(4), frame(4, x: 0.8), withPalm(frame(4, x: 0.8)), frame(4, x: 0.8), frame(0)])
-        #expect(result == [.progress(.right, fraction: 1), .progress(.right, fraction: 1), .progress(.right, fraction: 1), .fired(.right)])
+        #expect(result.count == 4)
+        #expect(result.dropLast().allSatisfy { isPeek($0, 1, offset: 0.1) })
+        #expect(result.last == .peekReleased)
     }
 
-    @Test func staggeredLiftFiresOnce() {
+    @Test func staggeredLiftReleasesOnce() {
         let result = events([
             frame(4), frame(4, x: 0.8), frame(3, x: 0.8), frame(2, x: 0.8), frame(1, x: 0.8), frame(0),
         ])
-        #expect(result == [.progress(.right, fraction: 1), .fired(.right)])
+        #expect(result.filter { $0 == .peekReleased }.count == 1)
+        #expect(result.last == .peekReleased)
     }
 
     @Test func fingerReturningDuringLiftDoesNotStartNewGesture() {
-        let result = events([frame(4), frame(4, x: 0.8), frame(3, x: 0.8), frame(4, x: 0.8), frame(4, x: 0.2), frame(0)])
-        #expect(result == [.progress(.right, fraction: 1), .fired(.right)])
+        let result = events([frame(4), frame(4, x: 0.6), frame(3, x: 0.6), frame(4, x: 0.6), frame(4, x: 0.9), frame(0)])
+        #expect(result.count == 2 && result.last == .cancelled)
     }
 
     @Test func newGestureStartsAfterAllFingersLift() {
         let result = events([frame(4), frame(4, x: 0.8), frame(0), frame(4, x: 0.8), frame(4, x: 0.5), frame(0)])
-        #expect(result.filter { $0 == .fired(.right) }.count == 1)
-        #expect(result.last == .fired(.left))
+        #expect(result.filter { $0 == .peekReleased }.count == 2)
+        #expect(isPeek(result[result.count - 2], 1, offset: -0.1))
     }
 
     @Test func swipeDownIsIgnored() {
@@ -228,10 +257,12 @@ private func peek(_ event: GestureEvent?) -> Double? {
         #expect(result.last == .cancelled)
     }
 
-    @Test func verticalDriftAfterHorizontalSwipeDoesNotPeek() {
-        let result = events([frame(4), frame(4, x: 0.6), frame(4, x: 0.75, y: 0.95), frame(0)])
-        #expect(result.allSatisfy { peek($0) == nil })
-        #expect(result.last == .fired(.right))
+    @Test func verticalDriftAfterSidewaysSwipeIsIgnored() {
+        let result = events([frame(4), frame(4, x: 0.6), frame(4, x: 0.75, y: 0.95), frame(4, x: 0.75, y: 0.1), frame(0)])
+        #expect(isPeek(result[0], 1.0 / 3, offset: 0))
+        #expect(isPeek(result[1], 1, offset: 0.05))
+        #expect(isPeek(result[2], 1, offset: 0.05))
+        #expect(result.last == .peekReleased)
     }
 
     @Test func palmDuringPeekDoesNotMoveItOrEndIt() {
@@ -253,7 +284,7 @@ private func peek(_ event: GestureEvent?) -> Double? {
 
     @Test func labelledPalmLandingBeforeDirectionIsFixedDoesNotCancel() {
         let result = events([frame(4), withLabelledPalm(frame(4)), withLabelledPalm(frame(4, x: 0.8)), frame(0)])
-        #expect(result.last == .fired(.right))
+        #expect(result.last == .peekReleased)
     }
 
     @Test func labelledPalmDoesNotMakeUpTheFourthFinger() {
@@ -266,7 +297,8 @@ private func peek(_ event: GestureEvent?) -> Double? {
             withLabelledPalm(frame(4)), withLabelledPalm(frame(4, x: 0.8)), withLabelledPalm(frame(0)),
             withLabelledPalm(frame(4, x: 0.8)), withLabelledPalm(frame(4, x: 0.5)), withLabelledPalm(frame(0)),
         ])
-        #expect(result.filter { if case .fired = $0 { true } else { false } } == [.fired(.right), .fired(.left)])
+        #expect(result.filter { $0 == .peekReleased }.count == 2)
+        #expect(isPeek(result[result.count - 2], 1, offset: -0.1))
     }
 
     @Test func fingerSlidingOffTheEdgeKeepsPeekHeld() {
@@ -299,20 +331,32 @@ private func peek(_ event: GestureEvent?) -> Double? {
         #expect(result == [.peek(fraction: 1, offset: 0), .peekReleased])
     }
 
-    @Test func liftingOneFingerStillEndsHorizontalSwipe() {
-        let result = events([frame(4), frame(4, x: 0.8), frame(3, x: 0.8), frame(0)])
-        #expect(result == [.progress(.right, fraction: 1), .fired(.right)])
+    @Test func liftingOneFingerBeforeTheOverlayIsFullyShownCancels() {
+        let result = events([frame(4), frame(4, x: 0.6), frame(3, x: 0.6), frame(0)])
+        #expect(result.count == 2 && result.last == .cancelled)
     }
 
-    @Test func diagonalSwipeThatIsMostlyHorizontalStillFires() {
+    @Test func fingerSlidingOffTheEdgeKeepsSidewaysSeekingHeld() {
+        let fingers = frame(4, x: 0.8)
+        let oneLifted = TouchFrame(touches: Array(fingers.touches.dropLast()))
+        let movedOn = TouchFrame(touches: oneLifted.touches.map { Touch(id: $0.id, x: $0.x - 0.1, y: $0.y) })
+        let result = events([frame(4), fingers, oneLifted, movedOn, frame(0)])
+        #expect(result.count == 4)
+        #expect(isPeek(result[0], 1, offset: 0.1))
+        #expect(isPeek(result[1], 1, offset: 0.1))
+        #expect(isPeek(result[2], 1, offset: 0))
+        #expect(result.last == .peekReleased)
+    }
+
+    @Test func diagonalSwipeThatIsMostlyHorizontalStillShowsTheOverlay() {
         let result = events([frame(4), frame(4, x: 0.8, y: 0.6), frame(0)])
-        #expect(result.last == .fired(.right))
+        #expect(result.last == .peekReleased)
     }
 
     @Test func customThresholdsAreHonoured() {
         let custom = GestureThresholds(lowerBound: 0.10, trigger: 0.50)
         #expect(events([frame(4), frame(4, x: 0.8), frame(0)], thresholds: custom).last == .cancelled)
-        #expect(events([frame(4), frame(4, x: 0.58)], thresholds: custom) == [.progress(.right, fraction: 0)])
-        #expect(events([frame(4, x: 0.2), frame(4, x: 0.75), frame(0)], thresholds: custom).last == .fired(.right))
+        #expect(events([frame(4), frame(4, x: 0.58)], thresholds: custom).isEmpty)
+        #expect(events([frame(4, x: 0.2), frame(4, x: 0.75), frame(0)], thresholds: custom).last == .peekReleased)
     }
 }

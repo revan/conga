@@ -23,8 +23,8 @@ final class SettingsModel: ObservableObject {
 private struct SettingsView: View {
     @ObservedObject var model: SettingsModel
 
-    /// A threshold expressed in whole percent; edits are re-normalised so the indicator start
-    /// always stays below the trigger.
+    /// A threshold expressed in whole percent; edits are re-normalised so the fade-in start
+    /// always stays below the full overlay.
     private func percent(_ keyPath: WritableKeyPath<Settings, Double>) -> Binding<Double> {
         Binding {
             (model.settings[keyPath: keyPath] * 100).rounded()
@@ -37,23 +37,18 @@ private struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section("Commands") {
-                commandField("Swipe left", text: $model.settings.leftCommand)
-                commandField("Swipe right", text: $model.settings.rightCommand)
-            }
-
             Section {
                 Toggle("Natural scrolling", isOn: $model.settings.naturalScroll)
             }
 
             Section("Four-finger swipe distance") {
                 thresholdSlider(
-                    "Trigger command",
+                    "Show overlay",
                     value: percent(\.triggerFraction),
                     range: Settings.triggerRange.lowerBound * 100...Settings.triggerRange.upperBound * 100
                 )
                 thresholdSlider(
-                    "Show indicator",
+                    "Start fading in",
                     value: percent(\.indicatorStartFraction),
                     range: Settings.minimumIndicatorStart * 100...(model.settings.triggerFraction - Settings.minimumSpan) * 100
                 )
@@ -88,19 +83,6 @@ private struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 460)
         .fixedSize(horizontal: false, vertical: true)
-    }
-
-    /// The label sits above the field rather than beside it, so the command gets the full width,
-    /// wraps when it is long, and is left-aligned. A right-aligned field hides trailing spaces.
-    private func commandField(_ title: String, text: Binding<String>) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-            TextField(title, text: text, prompt: Text("Shell command"), axis: .vertical)
-                .labelsHidden()
-                .lineLimit(1...4)
-                .multilineTextAlignment(.leading)
-                .font(.body.monospaced())
-        }
     }
 
     private func thresholdSlider(_ title: String, value: Binding<Double>, range: ClosedRange<Double>) -> some View {

@@ -1,8 +1,8 @@
 import AppKit
 import CongaCore
 
-/// The row of workspace squares shown while swiping up. Like the arrow box, its opacity
-/// follows gesture progress directly, and it fades out on release.
+/// The row of workspace squares shown while swiping up or sideways. Its opacity follows
+/// gesture progress directly, and it fades out on release.
 @MainActor
 final class WorkspaceOverlayWindow {
     private static let spacing: CGFloat = 16
@@ -53,7 +53,7 @@ final class WorkspaceOverlayWindow {
 
     func hide() {
         progress = 0
-        // Forget it, so the next swipe up does not briefly outline where this one ended.
+        // Forget it, so the next gesture does not briefly outline where this one ended.
         selected = nil
         guard panel.isVisible else { return }
         generation += 1
