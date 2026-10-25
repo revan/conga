@@ -33,16 +33,16 @@ private final class RecordingRunner: CommandRunning {
         dispatcher.workspaces = Self.workspaces
         for f in [frame(4), frame(4, x: 0.6), frame(4, x: 0.7), frame(4, x: 0.81), frame(0)] { dispatcher.handle(f) }
         #expect(updates().map { if case .showWorkspaces(_, let selected) = $0 { selected } else { nil } } == [
-            "2", "2", "3", nil,
+            "2", "3", "4", nil,
         ])
         #expect(updates().last == .hide)
-        #expect(runner.commands == ["aerospace workspace 3"])
+        #expect(runner.commands == ["aerospace workspace 4"])
     }
 
     @Test func sidewaysSwipeReleasedBeforeTheOverlayIsFullyShownRunsNothing() {
         let (dispatcher, runner, updates) = makeDispatcher()
         dispatcher.workspaces = Self.workspaces
-        for f in [frame(4), frame(4, x: 0.4), frame(0)] { dispatcher.handle(f) }
+        for f in [frame(4), frame(4, x: 0.43), frame(0)] { dispatcher.handle(f) }
         #expect(runner.commands.isEmpty)
         #expect(updates().count == 2 && updates().last == .hide)
     }
@@ -52,7 +52,7 @@ private final class RecordingRunner: CommandRunning {
         settings.naturalScroll = true
         let (dispatcher, runner, _) = makeDispatcher(settings)
         dispatcher.workspaces = Self.workspaces
-        for f in [frame(4), frame(4, x: 0.19), frame(0)] { dispatcher.handle(f) }
+        for f in [frame(4), frame(4, x: 0.29), frame(0)] { dispatcher.handle(f) }
         for f in [frame(4), frame(4, y: 0.9), frame(4, x: 0.61, y: 0.9), frame(0)] { dispatcher.handle(f) }
         #expect(runner.commands == ["aerospace workspace 3", "aerospace workspace 1"])
     }
@@ -164,7 +164,7 @@ private final class RecordingRunner: CommandRunning {
         dispatcher.handle(frame(4, x: 0.8), device: 1)
         dispatcher.handle(frame(0), device: 2)
         dispatcher.handle(frame(0), device: 1)
-        #expect(runner.commands == ["aerospace workspace 3"])
+        #expect(runner.commands == ["aerospace workspace 4"])
     }
 }
 

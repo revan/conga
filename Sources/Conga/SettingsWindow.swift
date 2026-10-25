@@ -41,7 +41,7 @@ private struct SettingsView: View {
                 Toggle("Natural scrolling", isOn: $model.settings.naturalScroll)
             }
 
-            Section("Four-finger swipe distance") {
+            Section {
                 thresholdSlider(
                     "Show overlay",
                     value: percent(\.triggerFraction),
@@ -52,6 +52,11 @@ private struct SettingsView: View {
                     value: percent(\.indicatorStartFraction),
                     range: Settings.minimumIndicatorStart * 100...(model.settings.triggerFraction - Settings.minimumSpan) * 100
                 )
+            } header: {
+                Text("Four-finger swipe distance")
+            } footer: {
+                Text("A sideways swipe shows the overlay in \(Int((Settings.sidewaysTriggerScale * 100).rounded()))% of this distance.")
+                    .foregroundStyle(.secondary)
             }
 
             Section("Workspace overlay") {

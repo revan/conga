@@ -353,6 +353,17 @@ private func isPeek(_ event: GestureEvent, _ fraction: Double, offset expected: 
         #expect(result.last == .peekReleased)
     }
 
+    @Test func sidewaysTriggerIsSeparateFromSwipeUp() {
+        let custom = GestureThresholds(lowerBound: 0.05, trigger: 0.20, sidewaysTrigger: 0.10)
+        let sideways = events([frame(4), frame(4, x: 0.575), frame(4, x: 0.65), frame(0)], thresholds: custom)
+        #expect(sideways.count == 3)
+        #expect(isPeek(sideways[0], 0.5, offset: 0))
+        #expect(isPeek(sideways[1], 1, offset: 0.05))
+        #expect(sideways.last == .peekReleased)
+        let up = events([frame(4), frame(4, y: 0.625)], thresholds: custom)
+        #expect(up.count == 1 && isPeek(up[0], 0.5, offset: 0))
+    }
+
     @Test func customThresholdsAreHonoured() {
         let custom = GestureThresholds(lowerBound: 0.10, trigger: 0.50)
         #expect(events([frame(4), frame(4, x: 0.8), frame(0)], thresholds: custom).last == .cancelled)

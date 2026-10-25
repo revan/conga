@@ -6,13 +6,17 @@ public struct Settings: Equatable, Sendable {
     /// The indicator must start at least this far below the trigger.
     public static let minimumSpan = 0.01
     public static let accelerationRange = 0.0...5.0
+    /// A sideways swipe shows the overlay fully in this fraction of `triggerFraction`, so that
+    /// seeking along it does not take most of the trackpad's width.
+    public static let sidewaysTriggerScale = 0.5
 
     public var isEnabled = true
     /// When set, the fingers push the content: moving them left moves the workspace overlay's
     /// selection right, and the reverse.
     public var naturalScroll = false
-    /// Fraction of trackpad width (or height, for a swipe up) at which the workspace overlay
-    /// is fully shown. A sideways swipe seeks from there.
+    /// Fraction of trackpad height at which a swipe up shows the workspace overlay fully. A
+    /// sideways swipe takes `sidewaysTriggerScale` of it, as a fraction of width, and seeks
+    /// from there.
     public var triggerFraction = 0.20
     /// Fraction of trackpad width (or height) at which the workspace overlay starts to fade in.
     public var indicatorStartFraction = 0.05
@@ -23,7 +27,11 @@ public struct Settings: Equatable, Sendable {
     public init() {}
 
     public var thresholds: GestureThresholds {
-        GestureThresholds(lowerBound: indicatorStartFraction, trigger: triggerFraction)
+        GestureThresholds(
+            lowerBound: indicatorStartFraction,
+            trigger: triggerFraction,
+            sidewaysTrigger: max(triggerFraction * Self.sidewaysTriggerScale, indicatorStartFraction)
+        )
     }
 
     /// A copy with the thresholds forced into range and the indicator start below the trigger.

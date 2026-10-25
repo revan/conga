@@ -1,6 +1,6 @@
 public enum GestureEvent: Equatable, Sendable {
     /// Four fingers are down and the workspace overlay is showing. `fraction` is 0 at the lower
-    /// bound and 1 at the trigger distance. `offset` is how far the fingers have moved sideways
+    /// bound and 1 at the trigger distance (`sidewaysTrigger`, for a sideways swipe). `offset` is how far the fingers have moved sideways
     /// since the overlay could seek, as a fraction of trackpad width, positive to the right.
     case peek(fraction: Double, offset: Double)
     /// Fingers were released while the overlay could seek.
@@ -13,12 +13,15 @@ public struct GestureThresholds: Equatable, Sendable {
     /// Travel, as a fraction of the trackpad's width (or height, for a swipe up), at which
     /// the overlay starts to fade in.
     public var lowerBound: Double
-    /// Travel at which the overlay is fully shown.
+    /// Travel at which the overlay is fully shown by a swipe up.
     public var trigger: Double
+    /// Travel at which the overlay is fully shown by a sideways swipe, and seeking starts.
+    public var sidewaysTrigger: Double
 
-    public init(lowerBound: Double, trigger: Double) {
+    public init(lowerBound: Double, trigger: Double, sidewaysTrigger: Double? = nil) {
         self.lowerBound = lowerBound
         self.trigger = trigger
+        self.sidewaysTrigger = sidewaysTrigger ?? trigger
     }
 }
 
@@ -28,7 +31,7 @@ public struct GestureThresholds: Equatable, Sendable {
 /// direction, fixed when the swipe first passes the lower bound. A swipe down belongs to
 /// someone else.
 ///
-/// A sideways swipe fades the overlay in between the lower bound and the trigger distance.
+/// A sideways swipe fades the overlay in between the lower bound and `sidewaysTrigger`.
 /// Swiping back past the starting point only undoes it; going the other way takes a new touch.
 /// The starting point follows the fingers when they do, so swiping in the original direction
 /// again starts from wherever they turned around. Releasing before the trigger cancels. Once
@@ -158,10 +161,10 @@ public struct GestureRecognizer: Sendable {
                 state = .tracking(fingers: fingers, startX: x, startY: y, lock: .sideways(sign: sign), travel: 0)
                 return .peek(fraction: 0, offset: 0)
             }
-            if travel >= thresholds.trigger {
+            if travel >= thresholds.sidewaysTrigger {
                 // Fully shown. From here on sideways movement seeks, measured from the trigger
                 // distance so that a frame jumping past it does not lose the excess.
-                let originX = startX + sign * thresholds.trigger
+                let originX = startX + sign * thresholds.sidewaysTrigger
                 state = .tracking(
                     fingers: fingers, startX: startX, startY: startY,
                     lock: .seeking(originX: originX, lastX: x, lastY: y, isUp: false), travel: travel
@@ -173,7 +176,7 @@ public struct GestureRecognizer: Sendable {
                 return nil
             }
             state = .tracking(fingers: fingers, startX: startX, startY: startY, lock: .sideways(sign: sign), travel: travel)
-            return .peek(fraction: fraction(of: travel, thresholds: thresholds), offset: 0)
+            return .peek(fraction: fraction(of: travel, lowerBound: thresholds.lowerBound, trigger: thresholds.sidewaysTrigger), offset: 0)
 
         case .ended:
             if count == 0 {
@@ -183,9 +186,14 @@ public struct GestureRecognizer: Sendable {
         }
     }
 
+    /// How far up a swipe up is, from 0 at the lower bound to 1 at the trigger.
     private func fraction(of travel: Double, thresholds: GestureThresholds) -> Double {
-        let span = thresholds.trigger - thresholds.lowerBound
-        let past = travel - thresholds.lowerBound
+        fraction(of: travel, lowerBound: thresholds.lowerBound, trigger: thresholds.trigger)
+    }
+
+    private func fraction(of travel: Double, lowerBound: Double, trigger: Double) -> Double {
+        let span = trigger - lowerBound
+        let past = travel - lowerBound
         return span > 0 ? min(max(past / span, 0), 1) : (past >= 0 ? 1 : 0)
     }
 

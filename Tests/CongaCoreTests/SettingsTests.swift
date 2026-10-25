@@ -40,7 +40,14 @@ import Testing
         var settings = Settings()
         settings.triggerFraction = 0.3
         settings.indicatorStartFraction = 0.1
-        #expect(settings.thresholds == GestureThresholds(lowerBound: 0.1, trigger: 0.3))
+        #expect(settings.thresholds == GestureThresholds(lowerBound: 0.1, trigger: 0.3, sidewaysTrigger: 0.15))
+    }
+
+    @Test func sidewaysTriggerIsNeverBelowTheIndicatorStart() {
+        var settings = Settings()
+        settings.triggerFraction = 0.1
+        settings.indicatorStartFraction = 0.08
+        #expect(settings.thresholds.sidewaysTrigger == 0.08)
     }
 
     @Test func indicatorStartIsKeptBelowTrigger() {

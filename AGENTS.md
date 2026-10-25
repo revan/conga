@@ -55,8 +55,10 @@ New behaviour goes in `CongaCore` with tests; the app target should only wire th
 - **Coordinates are normalised.** Touch positions are 0...1 across the trackpad, so the
   thresholds in `Settings` are fractions of trackpad width (or height, for a swipe up), and
   the settings UI shows percent.
-- **Sideways swipes.** The overlay fades in between the indicator start and trigger distances
-  (`Settings.indicatorStartFraction`, `triggerFraction`). Releasing before the trigger, or
+- **Sideways swipes.** The overlay fades in between the indicator start distance
+  (`Settings.indicatorStartFraction`) and half the trigger distance (`triggerFraction` ×
+  `Settings.sidewaysTriggerScale`, never below the start), so seeking keeps most of the
+  trackpad's width; the full trigger distance applies to a swipe up. Releasing before the trigger, or
   swiping back until it has faded out, cancels. Once past the trigger the overlay stays fully
   shown, all sideways movement from the trigger point seeks (swiping back moves the outline
   back rather than fading), and lifting switches. After a gesture ends the recognizer ignores
@@ -93,7 +95,7 @@ New behaviour goes in `CongaCore` with tests; the app target should only wire th
   recognised, a frame in which the fingers move more sideways than up or down does not change
   how far up the swipe is, so seeking with a hand that is not level does not fade the overlay;
   moving mostly down still does.
-- **Seeking.** Once a swipe up is recognised, or a sideways swipe passes the trigger, every
+- **Seeking.** Once a swipe up is recognised, or a sideways swipe passes its trigger, every
   tenth of the trackpad's width the fingers move sideways moves the outline one workspace, in
   the direction of the fingers (reversed by `naturalScroll`). The row does not wrap; pushing past an end drags the starting point
   along, like a swipe. If the focused workspace is not in the row (it has a name, not a
