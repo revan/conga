@@ -83,6 +83,41 @@ private func json(_ windows: [(id: Int, app: String, title: String, workspace: S
         #expect(WorkspaceOverview.refocus([], on: "1") == [])
     }
 
+    @Test func groupsWorkspacesByMonitor() {
+        let data = json([(1, "A", "a", "1"), (2, "B", "b", "2"), (3, "C", "c", "3"), (4, "D", "d", "4")])
+        let monitors = ["1": 2, "2": 1, "3": 2, "4": 1]
+        let workspaces = WorkspaceOverview.parse(windowsJSON: data, focusedWorkspace: "1", monitors: monitors)
+        #expect(workspaces.map(\.name) == ["2", "4", "1", "3"])
+        #expect(workspaces.map(\.monitor) == [1, 1, 2, 2])
+        let unknown = WorkspaceOverview.parse(windowsJSON: data, focusedWorkspace: "1", monitors: ["3": 1])
+        #expect(unknown.map(\.name) == ["3", "1", "2", "4"])
+    }
+
+    @Test func refocusPutsAnAddedWorkspaceWithItsMonitor() {
+        let data = json([(1, "A", "a", "2"), (2, "B", "b", "5"), (3, "C", "c", "8")])
+        let monitors = ["2": 1, "5": 2, "8": 1, "3": 2, "7": 1, "9": 2]
+        for (from, to) in [("3", "7"), ("7", "3"), ("2", "9"), ("9", "3")] {
+            let refocused = WorkspaceOverview.refocus(
+                WorkspaceOverview.parse(windowsJSON: data, focusedWorkspace: from, monitors: monitors),
+                on: to,
+                monitors: monitors
+            )
+            #expect(refocused == WorkspaceOverview.parse(windowsJSON: data, focusedWorkspace: to, monitors: monitors), "\(from) → \(to)")
+        }
+    }
+
+    @Test func readsMonitorsFromTheCLIsOutput() {
+        let data = Data("""
+            [
+              { "monitor-id" : 1, "workspace" : "1" },
+              { "monitor-id" : 2, "workspace" : "7" },
+              { "monitor-id" : 2, "workspace" : "beeper" }
+            ]
+            """.utf8)
+        #expect(WorkspaceOverview.monitors(inJSON: data) == ["1": 1, "7": 2, "beeper": 2])
+        #expect(WorkspaceOverview.monitors(inJSON: Data("nope".utf8)).isEmpty)
+    }
+
     @Test func unexpectedOutputGivesNoWorkspaces() {
         #expect(WorkspaceOverview.parse(windowsJSON: Data("not json".utf8), focusedWorkspace: "1").isEmpty)
         #expect(WorkspaceOverview.parse(windowsJSON: Data("[]".utf8), focusedWorkspace: "1").isEmpty)
@@ -232,6 +267,26 @@ private func json(_ windows: [(id: Int, app: String, title: String, workspace: S
         let size = WorkspaceOverviewLayout.squareSize(count: 6, available: 1000, preferred: 200, spacing: 20)
         #expect(size == 150)
         #expect(WorkspaceOverviewLayout.squareSize(count: 0, available: 1000, preferred: 200, spacing: 20) == 0)
+    }
+
+    @Test func monitorBreaksFallWhereTheMonitorChanges() {
+        let workspaces = [1, 1, 2, 2, nil, 3].enumerated().map {
+            Workspace(name: String($0.offset), isFocused: false, windows: [], monitor: $0.element)
+        }
+        #expect(WorkspaceOverviewLayout.monitorBreaks(in: workspaces) == [2])
+        #expect(WorkspaceOverviewLayout.monitorBreaks(in: []) == [])
+    }
+
+    @Test func breaksLeaveHalfASquare() {
+        let row = WorkspaceOverviewLayout.squareOffsets(count: 4, breaks: [2], size: 100, spacing: 10)
+        #expect(row.offsets == [0, 110, 270, 380])
+        #expect(row.width == 480)
+        #expect(WorkspaceOverviewLayout.squareOffsets(count: 0, breaks: [], size: 100, spacing: 10).width == 0)
+    }
+
+    @Test func squaresShrinkToFitBreaks() {
+        let size = WorkspaceOverviewLayout.squareSize(count: 4, breaks: 1, available: 480, preferred: 200, spacing: 10)
+        #expect(size == 100)
     }
 
     @Test(arguments: [1, 2, 3, 5, 9, 10]) func thumbnailsStayInBoundsWithoutOverlapping(count: Int) {

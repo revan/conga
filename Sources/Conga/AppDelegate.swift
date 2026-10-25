@@ -16,6 +16,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The focused workspace as AeroSpace last reported it through `subscribe`, or nil while
     /// no subscription is running.
     private var liveFocus: String?
+    /// The monitor each workspace was on at the last refresh, by name.
+    private var monitors: [String: Int] = [:]
     private var focusSubscription: RunningCommand?
     /// How long to wait before subscribing again after a subscription ends.
     private var resubscribeDelay = AppDelegate.minimumResubscribeDelay
@@ -91,15 +93,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task {
             async let windows = shell.output(of: WorkspaceOverview.listWindowsCommand)
             async let focused = shell.output(of: WorkspaceOverview.focusedWorkspaceCommand)
+            async let monitorsJSON = shell.output(of: WorkspaceOverview.monitorsCommand)
             guard let windowsJSON = await windows else { return }
+            let monitors = WorkspaceOverview.monitors(inJSON: await monitorsJSON ?? Data())
             var workspaces = WorkspaceOverview.parse(
                 windowsJSON: windowsJSON,
-                focusedWorkspace: String(decoding: await focused ?? Data(), as: UTF8.self)
+                focusedWorkspace: String(decoding: await focused ?? Data(), as: UTF8.self),
+                monitors: monitors
             )
             guard generation == refreshGeneration else { return }
+            self.monitors = monitors
             if let liveFocus {
                 // Newer than the answer to the query if the focus changed while it ran.
-                workspaces = WorkspaceOverview.refocus(workspaces, on: liveFocus)
+                workspaces = WorkspaceOverview.refocus(workspaces, on: liveFocus, monitors: monitors)
             }
             dispatcher.workspaces = workspaces
             overlay.update(workspaces: workspaces, previews: previews)
@@ -131,7 +137,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func focusChanged(to focused: String) {
         liveFocus = focused
         resubscribeDelay = Self.minimumResubscribeDelay
-        let workspaces = WorkspaceOverview.refocus(dispatcher.workspaces, on: focused)
+        let workspaces = WorkspaceOverview.refocus(dispatcher.workspaces, on: focused, monitors: monitors)
         guard workspaces != dispatcher.workspaces else { return }
         dispatcher.workspaces = workspaces
         overlay.update(workspaces: workspaces, previews: previews)

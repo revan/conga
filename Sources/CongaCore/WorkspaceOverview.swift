@@ -23,11 +23,14 @@ public struct Workspace: Equatable, Sendable {
     public var name: String
     public var isFocused: Bool
     public var windows: [WorkspaceWindow]
+    /// AeroSpace's ID for the monitor the workspace is on, if known.
+    public var monitor: Int?
 
-    public init(name: String, isFocused: Bool, windows: [WorkspaceWindow]) {
+    public init(name: String, isFocused: Bool, windows: [WorkspaceWindow], monitor: Int? = nil) {
         self.name = name
         self.isFocused = isFocused
         self.windows = windows
+        self.monitor = monitor
     }
 }
 
@@ -36,6 +39,8 @@ public enum WorkspaceOverview {
     public static let listWindowsCommand =
         "aerospace list-windows --all --json --format '%{window-id}%{app-name}%{window-title}%{workspace}'"
     public static let focusedWorkspaceCommand = "aerospace list-workspaces --focused"
+    /// Every workspace with the monitor it is on, for `monitors(inJSON:)`.
+    public static let monitorsCommand = "aerospace list-workspaces --all --json --format '%{workspace}%{monitor-id}'"
     /// Prints a line of JSON when it starts and again every time the focused workspace changes.
     /// AeroSpace has had `subscribe` since 0.21; older versions fail it.
     public static let subscribeToFocusCommand = "aerospace subscribe focused-workspace-changed"
@@ -58,11 +63,29 @@ public enum WorkspaceOverview {
         }
     }
 
-    /// The numbered workspaces that have windows, and the focused one if it is numbered, in
-    /// numeric order. Workspaces with other names are left out, and so are other empty ones,
-    /// which `list-windows` never mentions. Output that is not the expected JSON gives an
-    /// empty list.
-    public static func parse(windowsJSON: Data, focusedWorkspace: String) -> [Workspace] {
+    private struct MonitorEntry: Decodable {
+        var workspace: String
+        var monitor: Int
+
+        enum CodingKeys: String, CodingKey {
+            case workspace
+            case monitor = "monitor-id"
+        }
+    }
+
+    /// The monitor each workspace is on, by workspace name, from `monitorsCommand`'s output.
+    /// Output that is not the expected JSON gives none.
+    public static func monitors(inJSON data: Data) -> [String: Int] {
+        guard let entries = try? JSONDecoder().decode([MonitorEntry].self, from: data) else { return [:] }
+        return Dictionary(entries.map { ($0.workspace, $0.monitor) }) { first, _ in first }
+    }
+
+    /// The numbered workspaces that have windows, and the focused one if it is numbered,
+    /// grouped by monitor in the order of their IDs, and in numeric order within a monitor.
+    /// Workspaces on no monitor in `monitors` come last. Workspaces with other names are left
+    /// out, and so are other empty ones, which `list-windows` never mentions. Output that is
+    /// not the expected JSON gives an empty list.
+    public static func parse(windowsJSON: Data, focusedWorkspace: String, monitors: [String: Int] = [:]) -> [Workspace] {
         guard let entries = try? JSONDecoder().decode([Entry].self, from: windowsJSON) else { return [] }
         let focused = focusedWorkspace.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -79,10 +102,16 @@ public enum WorkspaceOverview {
             names[number] = focused
             windows[number] = []
         }
-        return windows.keys.sorted().map { number in
+        return windows.keys.map { number in
             let name = names[number] ?? String(number)
-            return Workspace(name: name, isFocused: name == focused, windows: windows[number] ?? [])
+            return Workspace(name: name, isFocused: name == focused, windows: windows[number] ?? [], monitor: monitors[name])
         }
+        .sorted { rowOrder($0) < rowOrder($1) }
+    }
+
+    /// Sorts numbered workspaces into the overlay's row.
+    private static func rowOrder(_ workspace: Workspace) -> (Int, Int) {
+        (workspace.monitor ?? .max, Int(workspace.name) ?? .max)
     }
 }
 
@@ -97,15 +126,17 @@ extension WorkspaceOverview {
     }
 
     /// `workspaces` as `parse` would have given them had `focused` been the focused workspace:
-    /// an empty workspace is there only while it is focused.
-    public static func refocus(_ workspaces: [Workspace], on focused: String) -> [Workspace] {
+    /// an empty workspace is there only while it is focused. `monitors` says where to put a
+    /// workspace that was not in the list.
+    public static func refocus(_ workspaces: [Workspace], on focused: String, monitors: [String: Int] = [:]) -> [Workspace] {
         guard !workspaces.isEmpty else { return [] }
         var result = workspaces
             .filter { !$0.windows.isEmpty || $0.name == focused }
-            .map { Workspace(name: $0.name, isFocused: $0.name == focused, windows: $0.windows) }
-        if let number = Int(focused), !result.contains(where: \.isFocused) {
-            let index = result.firstIndex { Int($0.name).map { $0 > number } ?? false } ?? result.endIndex
-            result.insert(Workspace(name: focused, isFocused: true, windows: []), at: index)
+            .map { Workspace(name: $0.name, isFocused: $0.name == focused, windows: $0.windows, monitor: $0.monitor) }
+        if Int(focused) != nil, !result.contains(where: \.isFocused) {
+            let added = Workspace(name: focused, isFocused: true, windows: [], monitor: monitors[focused])
+            let index = result.firstIndex { rowOrder($0) > rowOrder(added) } ?? result.endIndex
+            result.insert(added, at: index)
         }
         return result
     }
@@ -204,12 +235,48 @@ public struct WorkspaceSeeker: Sendable {
 /// windows' real positions are no use, because AeroSpace parks the windows of hidden
 /// workspaces off-screen.
 public enum WorkspaceOverviewLayout {
-    /// The side of each square: `preferred`, or less if `count` squares `spacing` apart would
-    /// not fit in `available`.
-    public static func squareSize(count: Int, available: Double, preferred: Double, spacing: Double) -> Double {
+    /// The indices of the workspaces that start a new monitor's group in the row, where the
+    /// row leaves a gap. A workspace whose monitor is unknown starts no group.
+    public static func monitorBreaks(in workspaces: [Workspace]) -> Set<Int> {
+        Set(workspaces.indices.dropFirst().filter { index in
+            guard let monitor = workspaces[index].monitor, let previous = workspaces[index - 1].monitor else {
+                return false
+            }
+            return monitor != previous
+        })
+    }
+
+    /// The side of each square: `preferred`, or less if `count` squares `spacing` apart, with
+    /// `breaks` of them half a square further from the one before, would not fit in `available`.
+    public static func squareSize(
+        count: Int,
+        breaks: Int = 0,
+        available: Double,
+        preferred: Double,
+        spacing: Double
+    ) -> Double {
         guard count > 0 else { return 0 }
-        let fitting = (available - spacing * Double(count - 1)) / Double(count)
+        let fitting = (available - spacing * Double(count - 1)) / (Double(count) + Double(breaks) / 2)
         return max(min(preferred, fitting), 0)
+    }
+
+    /// Where each of `count` squares of side `size` starts along the row, and the row's width:
+    /// `spacing` apart, plus half a square before each index in `breaks`.
+    public static func squareOffsets(
+        count: Int,
+        breaks: Set<Int>,
+        size: Double,
+        spacing: Double
+    ) -> (offsets: [Double], width: Double) {
+        var offsets: [Double] = []
+        var x = 0.0
+        for index in 0..<count {
+            if index > 0 { x += spacing }
+            if breaks.contains(index) { x += size / 2 }
+            offsets.append(x)
+            x += size
+        }
+        return (offsets, x)
     }
 
     /// Cells for `count` windows inside `bounds`, in rows from the top (y points up, as in

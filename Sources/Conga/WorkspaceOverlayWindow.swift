@@ -119,20 +119,24 @@ final class WorkspaceOverlayWindow {
         guard let screen = HUDStyle.activeScreen()?.frame else { return }
         needsRebuild = false
 
-        let count = workspaces.count
+        // Each monitor's workspaces are a group of their own, set apart by half a square.
+        let breaks = WorkspaceOverviewLayout.monitorBreaks(in: workspaces)
         let size = WorkspaceOverviewLayout.squareSize(
-            count: count,
+            count: workspaces.count,
+            breaks: breaks.count,
             available: screen.width - 2 * Self.sideMargin,
             preferred: HUDStyle.size,
             spacing: Self.spacing
         )
-        let width = CGFloat(count) * size + CGFloat(count - 1) * Self.spacing
+        let (offsets, width) = WorkspaceOverviewLayout.squareOffsets(
+            count: workspaces.count, breaks: breaks, size: size, spacing: Self.spacing
+        )
 
         let row = NSView(frame: NSRect(x: 0, y: 0, width: width, height: size))
         squareFrames = [:]
-        for (index, workspace) in workspaces.enumerated() {
+        for (workspace, offset) in zip(workspaces, offsets) {
             let square = HUDStyle.makeBackground(containing: makeContent(for: workspace, size: size), size: size)
-            square.setFrameOrigin(NSPoint(x: CGFloat(index) * (size + Self.spacing), y: 0))
+            square.setFrameOrigin(NSPoint(x: offset, y: 0))
             row.addSubview(square)
             squareFrames[workspace.name] = square.frame
         }

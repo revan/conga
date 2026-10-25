@@ -108,7 +108,10 @@ New behaviour goes in `CongaCore` with tests; the app target should only wire th
 - **Workspace overlay data.** Each gesture that shows it runs `aerospace list-windows --all --json` once,
   shows the result with the previews from last time, then captures new previews and updates in
   place. Only workspaces whose name is a number are shown: those with windows, plus the
-  focused one. If `aerospace` fails the overlay does not appear. `GestureDispatcher.workspaces`
+  focused one. They are grouped by monitor (`aerospace list-workspaces --all` gives each
+  workspace's monitor ID), monitors in ID order and numbers in order within each, and the
+  row leaves an extra half square between one monitor's group and the next; seeking crosses
+  the gap like any other step. If `aerospace` fails the overlay does not appear. `GestureDispatcher.workspaces`
   holds the same list for seeking, so until a gesture's refresh arrives, a few tens of
   milliseconds in, it selects from the previous swipe's list.
 - **Focus is followed between swipes.** So that the overlay never opens on a workspace that was
