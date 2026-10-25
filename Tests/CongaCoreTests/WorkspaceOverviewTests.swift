@@ -106,6 +106,32 @@ private func json(_ windows: [(id: Int, app: String, title: String, workspace: S
         }
     }
 
+    @Test func includesTheFirstEmptyWorkspaceOnEachMonitor() {
+        let data = json([(1, "A", "a", "1"), (2, "B", "b", "3"), (3, "C", "c", "7")])
+        let monitors = ["1": 1, "2": 1, "3": 1, "4": 1, "10": 2, "7": 2, "8": 2, "9": 2, "beeper": 2]
+        let workspaces = WorkspaceOverview.parse(windowsJSON: data, focusedWorkspace: "1", monitors: monitors)
+        #expect(workspaces.map(\.name) == ["1", "2", "3", "7", "8"])
+        #expect(workspaces[1] == Workspace(name: "2", isFocused: false, windows: [], monitor: 1))
+        let focusedEmpty = WorkspaceOverview.parse(windowsJSON: data, focusedWorkspace: "9", monitors: monitors)
+        #expect(focusedEmpty.map(\.name) == ["1", "2", "3", "7", "8", "9"])
+        let full = WorkspaceOverview.parse(windowsJSON: data, focusedWorkspace: "1", monitors: ["1": 1, "3": 1, "7": 2])
+        #expect(full.map(\.name) == ["1", "3", "7"])
+        #expect(WorkspaceOverview.parse(windowsJSON: Data("[]".utf8), focusedWorkspace: "1", monitors: monitors).isEmpty)
+    }
+
+    @Test func refocusKeepsTheFirstEmptyWorkspaceOnEachMonitor() {
+        let data = json([(1, "A", "a", "1"), (2, "B", "b", "7")])
+        let monitors = ["1": 1, "2": 1, "3": 1, "7": 2, "8": 2, "9": 2]
+        for (from, to) in [("1", "2"), ("2", "3"), ("3", "8"), ("9", "1"), ("2", "beeper")] {
+            let refocused = WorkspaceOverview.refocus(
+                WorkspaceOverview.parse(windowsJSON: data, focusedWorkspace: from, monitors: monitors),
+                on: to,
+                monitors: monitors
+            )
+            #expect(refocused == WorkspaceOverview.parse(windowsJSON: data, focusedWorkspace: to, monitors: monitors), "\(from) → \(to)")
+        }
+    }
+
     @Test func readsMonitorsFromTheCLIsOutput() {
         let data = Data("""
             [

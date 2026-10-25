@@ -80,33 +80,41 @@ public enum WorkspaceOverview {
         return Dictionary(entries.map { ($0.workspace, $0.monitor) }) { first, _ in first }
     }
 
-    /// The numbered workspaces that have windows, and the focused one if it is numbered,
-    /// grouped by monitor in the order of their IDs, and in numeric order within a monitor.
-    /// Workspaces on no monitor in `monitors` come last. Workspaces with other names are left
-    /// out, and so are other empty ones, which `list-windows` never mentions. Output that is
-    /// not the expected JSON gives an empty list.
+    /// The numbered workspaces that have windows, the focused one if it is numbered, and the
+    /// lowest-numbered empty one on each monitor in `monitors`, grouped by monitor in the
+    /// order of their IDs, and in numeric order within a monitor. Workspaces on no monitor in
+    /// `monitors` come last. Workspaces with other names are left out, and so are other empty
+    /// ones. Output that is not the expected JSON, or that lists no windows, gives an empty list.
     public static func parse(windowsJSON: Data, focusedWorkspace: String, monitors: [String: Int] = [:]) -> [Workspace] {
-        guard let entries = try? JSONDecoder().decode([Entry].self, from: windowsJSON) else { return [] }
-        let focused = focusedWorkspace.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let entries = try? JSONDecoder().decode([Entry].self, from: windowsJSON),
+              !entries.isEmpty
+        else { return [] }
 
-        var windows: [Int: [WorkspaceWindow]] = [:]
-        var names: [Int: String] = [:]
-        for entry in entries {
-            guard let number = Int(entry.workspace) else { continue }
-            names[number] = entry.workspace
-            windows[number, default: []].append(
+        var windows: [String: [WorkspaceWindow]] = [:]
+        for entry in entries where Int(entry.workspace) != nil {
+            windows[entry.workspace, default: []].append(
                 WorkspaceWindow(id: entry.id, appName: entry.appName ?? "", title: entry.title ?? "")
             )
         }
-        if let number = Int(focused), !entries.isEmpty, windows[number] == nil {
-            names[number] = focused
-            windows[number] = []
+        return row(
+            windows: windows,
+            focused: focusedWorkspace.trimmingCharacters(in: .whitespacesAndNewlines),
+            monitors: monitors
+        )
+    }
+
+    /// The overlay's row for numbered workspaces with `windows`, by name, as `parse` describes.
+    private static func row(windows: [String: [WorkspaceWindow]], focused: String, monitors: [String: Int]) -> [Workspace] {
+        var names = Set(windows.keys)
+        if Int(focused) != nil { names.insert(focused) }
+        // `list-windows` never mentions empty workspaces, but `monitors` lists them all.
+        let empty = monitors.keys.filter { Int($0) != nil && windows[$0] == nil }
+        for onMonitor in Dictionary(grouping: empty, by: { monitors[$0] }).values {
+            if let first = onMonitor.min(by: { Int($0)! < Int($1)! }) { names.insert(first) }
         }
-        return windows.keys.map { number in
-            let name = names[number] ?? String(number)
-            return Workspace(name: name, isFocused: name == focused, windows: windows[number] ?? [], monitor: monitors[name])
-        }
-        .sorted { rowOrder($0) < rowOrder($1) }
+        return names
+            .map { Workspace(name: $0, isFocused: $0 == focused, windows: windows[$0] ?? [], monitor: monitors[$0]) }
+            .sorted { rowOrder($0) < rowOrder($1) }
     }
 
     /// Sorts numbered workspaces into the overlay's row.
@@ -126,19 +134,15 @@ extension WorkspaceOverview {
     }
 
     /// `workspaces` as `parse` would have given them had `focused` been the focused workspace:
-    /// an empty workspace is there only while it is focused. `monitors` says where to put a
-    /// workspace that was not in the list.
+    /// an empty workspace that is not the first on its monitor is there only while it is
+    /// focused. `monitors` must be what `parse` was given.
     public static func refocus(_ workspaces: [Workspace], on focused: String, monitors: [String: Int] = [:]) -> [Workspace] {
         guard !workspaces.isEmpty else { return [] }
-        var result = workspaces
-            .filter { !$0.windows.isEmpty || $0.name == focused }
-            .map { Workspace(name: $0.name, isFocused: $0.name == focused, windows: $0.windows, monitor: $0.monitor) }
-        if Int(focused) != nil, !result.contains(where: \.isFocused) {
-            let added = Workspace(name: focused, isFocused: true, windows: [], monitor: monitors[focused])
-            let index = result.firstIndex { rowOrder($0) > rowOrder(added) } ?? result.endIndex
-            result.insert(added, at: index)
+        var windows: [String: [WorkspaceWindow]] = [:]
+        for workspace in workspaces where !workspace.windows.isEmpty {
+            windows[workspace.name] = workspace.windows
         }
-        return result
+        return row(windows: windows, focused: focused, monitors: monitors)
     }
 }
 

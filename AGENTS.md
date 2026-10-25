@@ -107,8 +107,9 @@ New behaviour goes in `CongaCore` with tests; the app target should only wire th
   with equal timestamps, as in most tests, are never accelerated. 0 in the settings turns it off.
 - **Workspace overlay data.** Each gesture that shows it runs `aerospace list-windows --all --json` once,
   shows the result with the previews from last time, then captures new previews and updates in
-  place. Only workspaces whose name is a number are shown: those with windows, plus the
-  focused one. They are grouped by monitor (`aerospace list-workspaces --all` gives each
+  place. Only workspaces whose name is a number are shown: those with windows, the focused
+  one, and the lowest-numbered empty one on each monitor, so there is always somewhere new
+  to switch to. They are grouped by monitor (`aerospace list-workspaces --all` gives each
   workspace's monitor ID), monitors in ID order and numbers in order within each, and the
   row leaves an extra half square between one monitor's group and the next; seeking crosses
   the gap like any other step. If `aerospace` fails the overlay does not appear. `GestureDispatcher.workspaces`
