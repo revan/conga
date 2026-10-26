@@ -52,6 +52,9 @@ public struct GestureThresholds: Equatable, Sendable {
 /// held with three of the four, since seeking can slide a finger off the trackpad's edge.
 /// Before the direction is fixed, a fifth touch cancels, so five fingers put down together are
 /// never a swipe.
+///
+/// With `startsSeeking` set, as it is while a carried window waits for more seeking, four fingers
+/// put down seek sideways at once, with the overlay fully shown, as if past the trigger.
 public struct GestureRecognizer: Sendable {
     public static let fingerCount = 4
     /// How many of the four fingers keep a seeking gesture held after the others lift.
@@ -78,7 +81,15 @@ public struct GestureRecognizer: Sendable {
 
     private var state = State.idle
 
+    /// Four fingers put down skip the fade-in and seek sideways straight away.
+    public var startsSeeking = false
+
     public init() {}
+
+    /// Ends the gesture under way, if any, and ignores input until every finger has lifted.
+    public mutating func end() {
+        state = .ended
+    }
 
     public mutating func handle(_ frame: TouchFrame, thresholds: GestureThresholds) -> GestureEvent? {
         var frame = frame
@@ -89,6 +100,13 @@ public struct GestureRecognizer: Sendable {
         case .idle:
             if count == Self.fingerCount {
                 let (x, y) = centroid(of: frame.touches)
+                if startsSeeking {
+                    state = .tracking(
+                        fingers: Set(frame.touches.map(\.id)), startX: x, startY: y,
+                        lock: .seeking(originX: x, lastX: x, lastY: y, isUp: false), travel: 0
+                    )
+                    return .peek(fraction: 1, offset: 0)
+                }
                 state = .tracking(fingers: Set(frame.touches.map(\.id)), startX: x, startY: y, lock: nil, travel: 0)
             } else if count > Self.fingerCount {
                 state = .ended

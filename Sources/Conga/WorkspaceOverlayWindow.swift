@@ -21,6 +21,8 @@ final class WorkspaceOverlayWindow {
     private var squareFrames: [String: NSRect] = [:]
     private var selected: String?
     private var previews: [Int: CGImage] = [:]
+    /// The window being carried to another workspace, dimmed where it is now.
+    private var carrying: Int?
     /// The progress last asked for; 0 once hidden.
     private var progress = 0.0
     private var needsRebuild = true
@@ -33,11 +35,16 @@ final class WorkspaceOverlayWindow {
         outline.layer?.cornerCurve = .continuous
     }
 
-    /// `selected` names the workspace to outline, if any.
-    func show(progress: Double, selected: String?) {
+    /// `selected` names the workspace to outline, if any; `carrying` is the window being
+    /// carried, if any.
+    func show(progress: Double, selected: String?, carrying: Int? = nil) {
         // Changes to the outline animate only once the overlay is up; it appears in place.
         let wasShown = self.progress > 0 && panel.isVisible
         self.progress = min(max(progress, 0), 1)
+        if carrying != self.carrying {
+            self.carrying = carrying
+            needsRebuild = true
+        }
         generation += 1
         refresh()
         select(selected, animated: wasShown)
@@ -53,6 +60,10 @@ final class WorkspaceOverlayWindow {
 
     func hide() {
         progress = 0
+        if carrying != nil {
+            carrying = nil
+            needsRebuild = true
+        }
         // Forget it, so the next gesture does not briefly outline where this one ended.
         selected = nil
         guard panel.isVisible else { return }
@@ -161,7 +172,9 @@ final class WorkspaceOverlayWindow {
             spacing: Self.tileSpacing * scale
         )
         for (window, cell) in zip(workspace.windows, cells) {
-            content.addSubview(makeTile(for: window, in: cell))
+            let tile = makeTile(for: window, in: cell)
+            if window.id == carrying { tile.alphaValue = 0.3 }
+            content.addSubview(tile)
         }
 
         let number = NSTextField(labelWithString: workspace.name)

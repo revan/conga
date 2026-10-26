@@ -32,7 +32,7 @@ private final class RecordingRunner: CommandRunning {
         let (dispatcher, runner, updates) = makeDispatcher()
         dispatcher.workspaces = Self.workspaces
         for f in [frame(4), frame(4, x: 0.6), frame(4, x: 0.7), frame(4, x: 0.81), frame(0)] { dispatcher.handle(f) }
-        #expect(updates().map { if case .showWorkspaces(_, let selected) = $0 { selected } else { nil } } == [
+        #expect(updates().map { if case .showWorkspaces(_, let selected, _) = $0 { selected } else { nil } } == [
             "2", "3", "4", nil,
         ])
         #expect(updates().last == .hide)

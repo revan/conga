@@ -6,8 +6,8 @@ import CongaCore
 nonisolated(unsafe) private var frameHandler: (@Sendable (Int, TouchFrame) -> Void)?
 
 /// `--log-touches` prints every frame's raw touches to stdout, for measuring how a palm differs
-/// from a finger.
-private let logsTouches = CommandLine.arguments.contains("--log-touches")
+/// from a finger, and clicks among them.
+let logsTouches = CommandLine.arguments.contains("--log-touches")
 
 private let contactCallback: MTContactCallbackFunction = { device, touches, count, timestamp, _ in
     var result: [Touch] = []

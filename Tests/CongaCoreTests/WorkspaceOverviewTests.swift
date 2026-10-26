@@ -213,6 +213,16 @@ private func json(_ windows: [(id: Int, app: String, title: String, workspace: S
         #expect(seeker.selection(in: row(["1", "2"], focused: "2"))?.name == "2")
     }
 
+    @Test func resumingContinuesFromTheSelection() {
+        var seeker = WorkspaceSeeker()
+        let workspaces = row(["1", "2", "3", "4", "5"], focused: "2")
+        #expect(seeker.select(offset: step, in: workspaces)?.name == "3")
+        seeker.resume()
+        // New fingers start their offsets from wherever they land.
+        #expect(seeker.select(offset: -0.4, in: workspaces)?.name == "3")
+        #expect(seeker.select(offset: -0.4 + step, in: workspaces)?.name == "4")
+    }
+
     /// Moves the fingers from 0 to `distance` in `frames` frames, `interval` seconds apart.
     private func seek(
         _ seeker: inout WorkspaceSeeker, to distance: Double, frames: Int, interval: Double,

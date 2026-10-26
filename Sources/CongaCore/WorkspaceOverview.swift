@@ -49,6 +49,11 @@ public enum WorkspaceOverview {
         "aerospace workspace \(workspace)"
     }
 
+    /// Moves the window with AeroSpace's ID `window` to `workspace`, and focus with it.
+    public static func moveWindowCommand(_ window: Int, to workspace: String) -> String {
+        "aerospace move-node-to-workspace --window-id \(window) --focus-follows-window \(workspace)"
+    }
+
     private struct Entry: Decodable {
         var id: Int
         var appName: String?
@@ -174,6 +179,8 @@ public struct WorkspaceSeeker: Sendable {
     private var position = 0.0
     private var last: (offset: Double, timestamp: Double)?
     private var speed = 0.0
+    /// The next offset is where a new touch starts, not movement.
+    private var isResuming = false
 
     public init(acceleration: Double = 0) {
         self.acceleration = max(acceleration, 0)
@@ -193,8 +200,19 @@ public struct WorkspaceSeeker: Sendable {
         return selection(in: workspaces)
     }
 
+    /// Keeps the selection where it is and measures the next offset from wherever it is, so
+    /// that fingers put down again continue from here rather than jumping by their new offset.
+    public mutating func resume() {
+        isResuming = true
+    }
+
     private mutating func advance(to offset: Double, at timestamp: Double) {
         defer { last = (offset, timestamp) }
+        if isResuming {
+            isResuming = false
+            speed = 0
+            if last != nil { return }
+        }
         guard let last else {
             position = offset
             return

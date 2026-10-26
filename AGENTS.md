@@ -5,7 +5,8 @@ Swiping four fingers sideways or up fades in a glass row of squares, one per num
 workspace that has windows, each showing previews of its windows with the workspace number over them.
 The focused workspace is outlined; moving the fingers sideways moves the outline along the row,
 and lifting switches to the outlined workspace. A sideways swipe released before the row is
-fully shown, or swiped back, cancels.
+fully shown, or swiped back, cancels. Swiping while a click is held on a window carries that
+window instead: releasing the click moves it to the outlined workspace.
 
 ## Commands
 
@@ -15,7 +16,7 @@ scripts/test.sh        # unit tests (extra args are passed to `swift test`)
 scripts/bundle.sh      # release build wrapped in build/Conga.app, ad-hoc signed
 open build/Conga.app
 build/Conga.app/Contents/MacOS/Conga --preview-workspaces 1     # hold the workspace overlay fully shown
-build/Conga.app/Contents/MacOS/Conga --log-touches > build/touches.log   # record raw touches (quit the running app first)
+build/Conga.app/Contents/MacOS/Conga --log-touches > build/touches.log   # record raw touches and clicks (quit the running app first)
 ```
 
 Use `scripts/test.sh` rather than bare `swift test`: the machine this was built on has only
@@ -29,17 +30,18 @@ CI (`.github/workflows/test.yml`) runs `scripts/test.sh` on a `macos-26` runner 
 
 - `Sources/CongaCore` — all logic, no AppKit. Everything here is unit tested.
   - `GestureRecognizer` — touch frames → `.peek` / `.peekReleased` / `.cancelled`.
-  - `GestureDispatcher` — one recognizer per trackpad; seeks, switches workspaces, emits
-    overlay updates.
+  - `GestureDispatcher` — one recognizer per trackpad; seeks, switches workspaces, carries
+    windows, emits overlay updates.
   - `Settings`, `SettingsStore` — values, clamping, `UserDefaults` persistence.
   - `ShellCommandRunner` — `/bin/sh -c`, fire and forget, `output(of:)` to read stdout, or
     `lines(of:)` to follow it line by line.
   - `ScrollFilter` — which scroll and gesture events to drop while the workspace overlay is open.
+  - `ClickFilter` — which drags to drop, and when to move the mouse-up, for a carried window's click.
   - `WorkspaceOverview` — `aerospace` JSON → workspaces and their windows, the overlay's
     geometry, and `WorkspaceSeeker`, which turns sideways travel into a selected workspace.
 - `Sources/Conga` — the AppKit/SwiftUI shell: status item, settings window, the HUD panel
   (`WorkspaceOverlayWindow`, styled by `HUDStyle`), `WindowPreviews`,
-  `ScrollBlocker`, and `MultitouchMonitor`. Keep it thin; it has no tests.
+  `InputTap`, and `MultitouchMonitor`. Keep it thin; it has no tests.
 - `Sources/CMultitouch` — C declarations for the private framework. No code.
 - `Tests/CongaCoreTests` — tests for `CongaCore`.
 
@@ -129,15 +131,31 @@ New behaviour goes in `CongaCore` with tests; the app target should only wire th
   has to be granted again.
 - **The overlay swallows scrolling.** MultitouchSupport only observes, so the fingers that
   seek along the overlay also scroll the window under the pointer. While the overlay is up,
-  `ScrollBlocker` drops scroll and trackpad gesture events with a `CGEventTap`, and after it
+  `InputTap` drops scroll and trackpad gesture events with a `CGEventTap`, and after it
   closes keeps dropping that scroll's remaining phases and momentum until a new scroll starts.
   The tap is enabled only while there is something to drop, and runs on its own thread: while
   it is enabled the window server holds every scroll event until it answers, and waiting on
   the main thread, busy drawing the overlay, froze the overlay and the gestures. A tap that drops events needs
   Accessibility permission, asked for at launch; without it scrolling passes through (the
-  log says so), the tap is tried again each time the overlay opens, so granting needs no restart, and
+  log says so), the taps are created as soon as it is granted (checked every 2 s) or the overlay opens, so granting needs no restart, and
   like Screen Recording it has to be granted again after each `scripts/bundle.sh`. Scrolling
   before the overlay starts to show (under the indicator start distance) still gets through.
+- **Carrying a window.** `InputTap` has a second tap, for the left button, enabled whenever
+  Conga is. While a click is held, `GestureDispatcher.clickBegan` takes the touches down at
+  that moment as the clicking finger and leaves them out of every frame until they lift, so
+  four more fingers make an ordinary swipe. When those four come down the app picks the
+  frontmost layer-0 window under the click (`CGWindowListCopyWindowInfo`; nothing if a menu or
+  panel is on top) and neutralises the click, unless the pointer has already moved more than
+  `ClickFilter.dragSlop` with the button down, in which case the click is the app's drag and
+  the swipe switches workspaces as usual. A neutralised click's drags are dropped, and its
+  mouse-up is delivered outside the window (its screen's top-left corner, or far off-screen)
+  so buttons and links cancel; the pointer is warped back if it followed. What an app does on
+  mouse-down still happens. Lifting the four fingers keeps the overlay open; four put down
+  again seek at once (`GestureRecognizer.startsSeeking`) from the outline
+  (`WorkspaceSeeker.resume`). Releasing the click after they lift runs
+  `aerospace move-node-to-workspace --window-id <id> --focus-follows-window <name>`, unless
+  the outline is on the window's own workspace; releasing it with the fingers down, or a
+  sideways swipe cancelled before the trigger, leaves the window where it is.
 - **Previews are tiled, not positioned.** AeroSpace parks the windows of hidden workspaces
   off-screen, so their real positions say nothing; each square lays its windows out in a grid.
 - **PATH.** Apps launched from Finder lack Homebrew on `PATH`. At startup the app asks the

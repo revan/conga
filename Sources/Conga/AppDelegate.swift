@@ -6,7 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let store = SettingsStore()
     private let monitor = MultitouchMonitor()
     private let overlay = WorkspaceOverlayWindow()
-    private let scrollBlocker = ScrollBlocker()
+    private let inputTap = InputTap()
     private let shell = ShellCommandRunner(environment: ShellCommandRunner.loginShellEnvironment())
     /// True from the first frame the overlay shows until the indicator is next hidden.
     private var isPeeking = false
@@ -25,6 +25,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let maximumResubscribeDelay: Duration = .seconds(300)
     /// The progress `--preview-workspaces` asked to hold the overlay at.
     private var previewProgress: Double?
+    /// Where the left button went down, while it is down.
+    private var clickLocation: CGPoint?
     private var model: SettingsModel!
     private var dispatcher: GestureDispatcher!
     private var settingsWindow: SettingsWindowController!
@@ -35,17 +37,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let settings = store.load()
         dispatcher = GestureDispatcher(settings: settings, runner: LoggingRunner(shell: shell))
         dispatcher.onIndicatorUpdate = { [weak self] in self?.apply($0) }
+        dispatcher.carryWindow = { [weak self] in self?.windowToCarry() }
         // Asked for here, once, rather than in the middle of a gesture. Without it the
         // overlay shows window names instead of previews.
         CGRequestScreenCaptureAccess()
-        // Without it the fingers seeking along the overlay also scroll the window under it.
-        scrollBlocker.start()
+        // Without it the fingers seeking along the overlay also scroll the window under it,
+        // and no window can be carried.
+        inputTap.start { [weak self] in self?.clicked($0) }
+        inputTap.watchesClicks = settings.isEnabled
 
         model = SettingsModel(settings: settings)
         model.onChange = { [weak self] settings in
             guard let self else { return }
             store.save(settings)
             dispatcher.settings = settings
+            inputTap.watchesClicks = settings.isEnabled
             enabledItem.state = settings.isEnabled ? .on : .off
         }
         settingsWindow = SettingsWindowController(model: model)
@@ -65,10 +71,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func apply(_ update: IndicatorUpdate) {
         switch update {
-        case .showWorkspaces(let progress, let selected):
+        case .showWorkspaces(let progress, let selected, let carrying):
             if !isPeeking {
                 isPeeking = true
-                scrollBlocker.isBlocking = true
+                inputTap.isBlocking = true
                 if liveFocus == nil {
                     // The list may say the wrong workspace is focused. Outline nothing until the
                     // refresh says which one is.
@@ -76,12 +82,83 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 refreshWorkspaces()
             }
-            overlay.show(progress: progress, selected: selected)
+            overlay.show(progress: progress, selected: selected, carrying: carrying)
         case .hide:
             isPeeking = false
-            scrollBlocker.isBlocking = false
+            inputTap.isBlocking = false
             overlay.hide()
         }
+    }
+
+    private func clicked(_ click: InputTap.Click) {
+        if logsTouches {
+            print(String(format: "%.3f %@", ProcessInfo.processInfo.systemUptime, String(describing: click)))
+            fflush(stdout)
+        }
+        switch click {
+        case .down(let location):
+            clickLocation = location
+            dispatcher.clickBegan()
+        case .up(let location, let moved):
+            clickLocation = nil
+            if moved, let now = CGEvent(source: nil)?.location, hypot(now.x - location.x, now.y - location.y) > 1 {
+                // The mouse-up went elsewhere, and the pointer may have followed it.
+                CGWarpMouseCursorPosition(location)
+                CGAssociateMouseAndMouseCursorPosition(1)
+            }
+            dispatcher.clickEnded()
+        }
+    }
+
+    /// The window under the held click, if it is an ordinary window of another app and the
+    /// click has not become a drag. The click is neutralised: from here on it does nothing to
+    /// the window.
+    private func windowToCarry() -> Int? {
+        guard let clickLocation, let (window, bounds) = Self.window(at: clickLocation) else {
+            NSLog("Conga: no window under the click to carry")
+            return nil
+        }
+        guard inputTap.neutraliseClick(dropPoint: Self.dropPoint(outside: bounds)) else {
+            NSLog("Conga: the click is already a drag; not carrying window %d", window)
+            return nil
+        }
+        NSLog("Conga: carrying window %d", window)
+        return window
+    }
+
+    /// The window server's ID and bounds for the frontmost window at `point`, in the window
+    /// server's top-left coordinates, if it is an ordinary window and not this app's.
+    private static func window(at point: CGPoint) -> (Int, CGRect)? {
+        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+        guard let list = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else { return nil }
+        let ownPID = Int(getpid())
+        for info in list {
+            guard let dictionary = info[kCGWindowBounds as String] as? NSDictionary,
+                  let bounds = CGRect(dictionaryRepresentation: dictionary), bounds.contains(point),
+                  info[kCGWindowAlpha as String] as? Double != 0,
+                  info[kCGWindowOwnerPID as String] as? Int != ownPID
+            else { continue }
+            // A menu, a panel or the like is over the window: nothing to carry.
+            guard info[kCGWindowLayer as String] as? Int == 0, let id = info[kCGWindowNumber as String] as? Int else { return nil }
+            return (id, bounds)
+        }
+        return nil
+    }
+
+    /// Somewhere outside `window` to deliver a neutralised mouse-up: the top-left corner of its
+    /// screen, under the menu bar, or if the window covers that too, far off every screen.
+    private static func dropPoint(outside window: CGRect) -> CGPoint {
+        let primaryTop = NSScreen.screens.first?.frame.maxY ?? 0
+        let screen = NSScreen.screens.first { screen in
+            let frame = screen.frame
+            let flipped = CGRect(x: frame.minX, y: primaryTop - frame.maxY, width: frame.width, height: frame.height)
+            return flipped.contains(CGPoint(x: window.midX, y: window.midY))
+        }
+        if let frame = screen?.frame {
+            let corner = CGPoint(x: frame.minX + 1, y: primaryTop - frame.maxY + 1)
+            if !window.contains(corner) { return corner }
+        }
+        return CGPoint(x: -100_000, y: -100_000)
     }
 
     /// Asks AeroSpace what is where and shows that with the previews already in hand, then
