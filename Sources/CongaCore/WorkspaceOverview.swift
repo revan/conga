@@ -325,6 +325,14 @@ public enum WorkspaceOverviewLayout {
     }
 
     /// The largest rect with the proportions of `size` that fits in `cell`, centred in it.
+    /// Where a carried window's preview of `size` floats: fitted into a box of `scale` times the
+    /// square's side, centred over `square`, with its bottom `gap` above the square's top.
+    public static func liftedFrame(_ size: CGSize, over square: CGRect, scale: Double, gap: Double) -> CGRect {
+        let side = square.width * scale
+        let fitted = aspectFit(size, in: CGRect(x: 0, y: 0, width: side, height: side))
+        return CGRect(x: square.midX - fitted.width / 2, y: square.maxY + gap, width: fitted.width, height: fitted.height)
+    }
+
     public static func aspectFit(_ size: CGSize, in cell: CGRect) -> CGRect {
         guard size.width > 0, size.height > 0 else { return cell }
         let scale = min(cell.width / size.width, cell.height / size.height)

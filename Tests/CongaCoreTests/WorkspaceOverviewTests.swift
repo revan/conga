@@ -351,6 +351,14 @@ private func json(_ windows: [(id: Int, app: String, title: String, workspace: S
         #expect(frames[2] == CGRect(x: 27.5, y: 0, width: 45, height: 45))
     }
 
+    @Test func liftedFrameSitsCentredAboveTheSquare() {
+        let square = CGRect(x: 100, y: 0, width: 200, height: 200)
+        #expect(WorkspaceOverviewLayout.liftedFrame(CGSize(width: 400, height: 200), over: square, scale: 0.8, gap: 10)
+            == CGRect(x: 120, y: 210, width: 160, height: 80))
+        #expect(WorkspaceOverviewLayout.liftedFrame(CGSize(width: 100, height: 400), over: square, scale: 0.8, gap: 10)
+            == CGRect(x: 180, y: 210, width: 40, height: 160))
+    }
+
     @Test func aspectFitCentresInTheCell() {
         let cell = CGRect(x: 0, y: 0, width: 100, height: 100)
         #expect(WorkspaceOverviewLayout.aspectFit(CGSize(width: 400, height: 200), in: cell)

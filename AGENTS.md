@@ -150,7 +150,8 @@ New behaviour goes in `CongaCore` with tests; the app target should only wire th
   the swipe switches workspaces as usual. A neutralised click's drags are dropped, and its
   mouse-up is delivered outside the window (its screen's top-left corner, or far off-screen)
   so buttons and links cancel; the pointer is warped back if it followed. What an app does on
-  mouse-down still happens. Lifting the four fingers keeps the overlay open; four put down
+  mouse-down still happens. While carried, the window's preview floats above the outlined
+  square, following it, and is left out of its own square. Lifting the four fingers keeps the overlay open; four put down
   again seek at once (`GestureRecognizer.startsSeeking`) from the outline
   (`WorkspaceSeeker.resume`). Releasing the click after they lift runs
   `aerospace move-node-to-workspace --window-id <id> --focus-follows-window <name>`, unless

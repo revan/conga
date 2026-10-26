@@ -13,6 +13,9 @@ final class WorkspaceOverlayWindow {
     private static let tileSpacing: CGFloat = 6
     private static let outlineWidth: CGFloat = 5
     private static let outlineMoveDuration = 0.12
+    /// A carried window's preview fits in this fraction of a square, this far above the row.
+    private static let liftedScale: CGFloat = 0.8
+    private static let liftedGap: CGFloat = 12
 
     private let panel = HUDStyle.makePanel(size: NSSize(width: HUDStyle.size, height: HUDStyle.size))
     private let outline = NSView()
@@ -21,8 +24,12 @@ final class WorkspaceOverlayWindow {
     private var squareFrames: [String: NSRect] = [:]
     private var selected: String?
     private var previews: [Int: CGImage] = [:]
-    /// The window being carried to another workspace, dimmed where it is now.
+    /// The window being carried to another workspace, shown above the outline instead of
+    /// in its square.
     private var carrying: Int?
+    /// The carried window's preview, and the size it is fitted to, while there is one.
+    private var lifted: NSView?
+    private var liftedSize = CGSize.zero
     /// The progress last asked for; 0 once hidden.
     private var progress = 0.0
     private var needsRebuild = true
@@ -104,24 +111,31 @@ final class WorkspaceOverlayWindow {
         let changed = selected != name
         selected = name
         outline.isHidden = frame == nil
+        lifted?.isHidden = frame == nil
         guard let frame, changed || !animated else { return }
+        let liftedOrigin = WorkspaceOverviewLayout.liftedFrame(
+            liftedSize, over: frame, scale: Self.liftedScale, gap: Self.liftedGap
+        ).origin
 
         // Resolved here rather than once, so it follows the accent colour and appearance.
         outline.layer?.borderColor = NSColor.controlAccentColor.cgColor
         guard animated && panel.isVisible else {
             outline.frame = frame
             outline.alphaValue = 1
+            lifted?.setFrameOrigin(liftedOrigin)
             return
         }
         if wasHidden {
             outline.frame = frame
             outline.alphaValue = 0
+            lifted?.setFrameOrigin(liftedOrigin)
         }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = Self.outlineMoveDuration
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             outline.animator().frame = frame
             outline.animator().alphaValue = 1
+            lifted?.animator().setFrameOrigin(liftedOrigin)
         }
     }
 
@@ -143,7 +157,10 @@ final class WorkspaceOverlayWindow {
             count: workspaces.count, breaks: breaks, size: size, spacing: Self.spacing
         )
 
-        let row = NSView(frame: NSRect(x: 0, y: 0, width: width, height: size))
+        // Room above the row for a carried window's preview.
+        let carried = carrying.flatMap { id in workspaces.lazy.flatMap(\.windows).first { $0.id == id } }
+        let height = carried == nil ? size : size + Self.liftedGap + size * Self.liftedScale
+        let row = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
         squareFrames = [:]
         for (workspace, offset) in zip(workspaces, offsets) {
             let square = HUDStyle.makeBackground(containing: makeContent(for: workspace, size: size), size: size)
@@ -153,9 +170,14 @@ final class WorkspaceOverlayWindow {
         }
         outline.layer?.cornerRadius = HUDStyle.cornerRadius * size / HUDStyle.size
         row.addSubview(outline)
+        lifted = carried.map { window in
+            let view = makeLifted(window, squareSize: size)
+            row.addSubview(view)
+            return view
+        }
         panel.contentView = row
         panel.setFrame(
-            NSRect(x: screen.midX - width / 2, y: screen.minY + HUDStyle.bottomMargin, width: width, height: size),
+            NSRect(x: screen.midX - width / 2, y: screen.minY + HUDStyle.bottomMargin, width: width, height: height),
             display: true
         )
     }
@@ -166,22 +188,22 @@ final class WorkspaceOverlayWindow {
         let scale = size / HUDStyle.size
         let content = NSView(frame: bounds)
 
+        // The carried window is shown above the outline instead.
+        let windows = workspace.windows.filter { $0.id != carrying }
         let cells = WorkspaceOverviewLayout.thumbnailFrames(
-            count: workspace.windows.count,
+            count: windows.count,
             in: bounds.insetBy(dx: Self.tileInset * scale, dy: Self.tileInset * scale),
             spacing: Self.tileSpacing * scale
         )
-        for (window, cell) in zip(workspace.windows, cells) {
-            let tile = makeTile(for: window, in: cell)
-            if window.id == carrying { tile.alphaValue = 0.3 }
-            content.addSubview(tile)
+        for (window, cell) in zip(windows, cells) {
+            content.addSubview(makeTile(for: window, in: cell))
         }
 
         let number = NSTextField(labelWithString: workspace.name)
         number.font = .systemFont(ofSize: 84 * scale, weight: .medium)
         number.sizeToFit()
         number.setFrameOrigin(NSPoint(x: bounds.midX - number.frame.width / 2, y: bounds.midY - number.frame.height / 2))
-        if workspace.windows.isEmpty {
+        if windows.isEmpty {
             number.textColor = workspace.isFocused ? .labelColor : .secondaryLabelColor
         } else {
             // White with a shadow stays readable over light and dark previews alike.
@@ -193,6 +215,25 @@ final class WorkspaceOverlayWindow {
         }
         content.addSubview(number)
         return content
+    }
+
+    /// The carried window's preview, or its name in a tile, with a shadow to lift it off the
+    /// row. `select` puts it in place.
+    private func makeLifted(_ window: WorkspaceWindow, squareSize: CGFloat) -> NSView {
+        let source = previews[window.id].map { CGSize(width: $0.width, height: $0.height) } ?? CGSize(width: 16, height: 10)
+        let frame = WorkspaceOverviewLayout.liftedFrame(
+            source, over: CGRect(x: 0, y: 0, width: squareSize, height: squareSize),
+            scale: Self.liftedScale, gap: 0
+        )
+        liftedSize = frame.size
+        let container = NSView(frame: NSRect(origin: .zero, size: frame.size))
+        container.wantsLayer = true
+        container.layer?.shadowColor = NSColor.black.cgColor
+        container.layer?.shadowOpacity = 0.5
+        container.layer?.shadowRadius = 12
+        container.layer?.shadowOffset = CGSize(width: 0, height: -4)
+        container.addSubview(makeTile(for: window, in: container.bounds))
+        return container
     }
 
     /// A preview of the window fitted into `cell`, or its name if there is no preview.
